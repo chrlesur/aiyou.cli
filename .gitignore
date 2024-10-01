@@ -51,7 +51,6 @@ debug
 
 # Dossiers de sortie de go
 /bin/
-/pkg/
 /tests/
 
 # Fichiers spécifiques à aiyou.cli
