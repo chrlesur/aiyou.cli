@@ -83,6 +83,8 @@ Pour envoyer un message unique :
 ./aiyou.cli chat "Votre message" -a votre_id_assistant
 ```
 
+Vous pouvez utiliser l'assistant LIA Mini par exemple avec l'id "asst_xLMDUf2cWAKaU8UBFFp1LsLA"
+
 Pour plus d'options, utilisez la commande d'aide :
 
 ```
