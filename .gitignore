@@ -1,0 +1,58 @@
+# Fichiers binaires compilés
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Fichiers de test
+*.test
+
+# Fichiers de sortie de la couverture de code
+*.out
+
+# Dépendances
+/vendor/
+
+# Fichiers temporaires de l'IDE GoLand
+.idea/
+
+# Fichiers temporaires de Visual Studio Code
+.vscode/
+
+# Fichiers de configuration locaux
+*.local
+
+# Fichiers de log
+*.log
+
+# Fichiers d'environnement
+.env
+
+# Fichiers système macOS
+.DS_Store
+
+# Fichiers temporaires
+*.tmp
+*.bak
+*.swp
+
+# Dossier de build
+/build/
+
+# Fichiers de debug
+debug
+
+# Fichier de configuration de l'éditeur
+*.sublime-workspace
+*.sublime-project
+
+# Fichiers de cache
+.cache/
+
+# Dossiers de sortie de go
+/bin/
+/pkg/
+/tests/
+
+# Fichiers spécifiques à aiyou.cli
+# Ajoutez ici d'autres fichiers ou dossiers spécifiques à votre projet si nécessaire
