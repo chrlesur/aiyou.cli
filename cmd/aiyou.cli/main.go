@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/chrlesur/aiyou.cli/internal/api"
@@ -12,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const VERSION = "0.1-alpha"
+const VERSION = "0.2-alpha"
 
 var (
 	debug             bool
@@ -68,29 +71,75 @@ var versionCmd = &cobra.Command{
 var chatCmd = &cobra.Command{
 	Use:   "chat [message]",
 	Short: "Send a single message to the AI.YOU assistant",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Long: `Send a single message to the AI.YOU assistant.
+The message can be provided as a command-line argument or via stdin.
+If no argument is provided and no stdin input is detected, the command will prompt for input.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
 		client := getAIYOUClient()
+
+		var input string
+		if len(args) > 0 {
+			input = strings.Join(args, " ")
+			logger.Debug(fmt.Sprintf("Input received from command line arguments: %s", input))
+		} else {
+			stat, _ := os.Stdin.Stat()
+			if (stat.Mode() & os.ModeCharDevice) == 0 {
+				bytes, err := io.ReadAll(os.Stdin)
+				if err != nil {
+					logger.Error(fmt.Sprintf("Error reading from stdin: %v", err))
+					return err
+				}
+				input = strings.TrimSpace(string(bytes))
+				logger.Debug(fmt.Sprintf("Input received from stdin: %s", input))
+			} else {
+				if !silent {
+					fmt.Print("Enter your message: ")
+				}
+				scanner := bufio.NewScanner(os.Stdin)
+				if scanner.Scan() {
+					input = scanner.Text()
+					logger.Debug(fmt.Sprintf("Input received from user prompt: %s", input))
+				} else {
+					logger.Error("Error reading input")
+					return fmt.Errorf("error reading input")
+				}
+			}
+		}
+
+		if input == "" {
+			logger.Error("No input provided")
+			return fmt.Errorf("no input provided")
+		}
 
 		var finalInstruction string
 		if instructionFile != "" {
 			loadedInstruction, err := client.LoadInstructionFromFile(instructionFile)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error loading instruction file: %v", err))
-				os.Exit(1)
+				return err
 			}
 			finalInstruction = loadedInstruction
+			logger.Debug(fmt.Sprintf("Instruction loaded from file: %s", finalInstruction))
 		} else {
 			finalInstruction = instruction
+			logger.Debug(fmt.Sprintf("Using provided instruction: %s", finalInstruction))
 		}
 
-		response, err := client.Chat(args[0], finalInstruction)
+		logger.Debug("Sending chat request to AI.YOU")
+		response, err := client.Chat(strings.NewReader(input), finalInstruction)
 		if err != nil {
-			logger.Error(fmt.Sprintf("Error: %v", err))
-			os.Exit(1)
+			logger.Error(fmt.Sprintf("Error during chat: %v", err))
+			return err
 		}
-		timestamp := time.Now().Format("2006-01-02 15:04:05")
-		fmt.Printf("[%s] AI.YOU: %s\n", timestamp, response)
+		logger.Debug(fmt.Sprintf("Received response from AI.YOU: %s", response))
+
+		if silent {
+			fmt.Println(response)
+		} else {
+			timestamp := time.Now().Format("2006-01-02 15:04:05")
+			fmt.Printf("[%s] AI.YOU: %s\n", timestamp, response)
+		}
+		return nil
 	},
 }
 
@@ -99,7 +148,22 @@ var interactiveCmd = &cobra.Command{
 	Short: "Start an interactive chat session with the AI.YOU assistant",
 	Run: func(cmd *cobra.Command, args []string) {
 		client := getAIYOUClient()
-		cli.RunInteractiveMode(client)
+
+		var systemPrompt string
+		if instructionFile != "" {
+			var err error
+			systemPrompt, err = client.LoadInstructionFromFile(instructionFile)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Error loading instruction file: %v", err))
+				fmt.Printf("Error loading instruction file: %v\n", err)
+				return
+			}
+		} else {
+			systemPrompt = instruction
+		}
+
+		logger.Debug(fmt.Sprintf("System prompt for interactive mode: %s", systemPrompt))
+		cli.RunInteractiveMode(client, systemPrompt)
 	},
 }
 
