@@ -1,6 +1,0 @@
-[2024-10-04 23:26:31] user: Hello
-[2024-10-04 23:26:39] assistant: Hello! How can I assist you today?
-[2024-10-04 23:26:46] user: J'habite a triel sur seine
-[2024-10-04 23:26:53] assistant: Bonjour ! En quoi puis-je vous aider aujourd'hui concernant Triel-sur-Seine ?
-[2024-10-04 23:27:09] user: Dis moi ou j'habite, j'ai oublié !
-[2024-10-04 23:27:16] assistant: Selon l'information fournie, vous habitez à Triel-sur-Seine. Est-ce cela dont vous avez besoin ou avez-vous des détails supplémentaires à préciser ?
