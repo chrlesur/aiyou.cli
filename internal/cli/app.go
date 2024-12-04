@@ -4,6 +4,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 
@@ -80,17 +81,19 @@ func (ca *ClientAdapter) RefreshToken() error {
 
 // App represents the CLI application structure
 type App struct {
-	rootCmd     *cobra.Command
-	cfg         *config.Config
-	log         *logrus.Logger
-	version     string
-	client      interfaces.AIClient
-	cache       cache.Cache
-	isLoggedIn  bool
-	closeOnce   sync.Once
-	isClosed    bool
-	authManager *api.AuthManager
-	chatManager *api.ChatManager
+	rootCmd       *cobra.Command
+	cfg           *config.Config
+	log           *logrus.Logger
+	version       string
+	client        interfaces.AIClient
+	cache         cache.Cache
+	isLoggedIn    bool
+	closeOnce     sync.Once
+	isClosed      bool
+	authManager   *api.AuthManager
+	chatManager   *api.ChatManager
+	threadManager *api.ThreadManager
+	stdin         io.Reader
 }
 
 // NewApp creates and initializes a new CLI application
@@ -138,15 +141,28 @@ func NewApp(cfg *AppConfig) (*App, error) {
 		cacheInstance.Close()
 		return nil, fmt.Errorf("failed to initialize chat manager: %w", err)
 	}
+	// Initialize thread manager
+	threadManager, err := api.NewThreadManager(api.ThreadManagerConfig{
+		Client: clientAdapter,
+		Cache:  cacheInstance,
+		Config: cfg.Config,
+		Logger: cfg.Logger,
+	})
+	if err != nil {
+		cacheInstance.Close()
+		return nil, fmt.Errorf("failed to initialize thread manager: %w", err)
+	}
 
 	app := &App{
-		cfg:         cfg.Config,
-		log:         cfg.Logger,
-		version:     cfg.Version,
-		client:      clientAdapter,
-		cache:       cacheInstance,
-		authManager: authManager,
-		chatManager: chatManager,
+		cfg:           cfg.Config,
+		log:           cfg.Logger,
+		version:       cfg.Version,
+		client:        clientAdapter,
+		cache:         cacheInstance,
+		authManager:   authManager,
+		chatManager:   chatManager,
+		threadManager: threadManager,
+		stdin:         os.Stdin,
 	}
 
 	app.initializeRootCommand()
@@ -226,6 +242,7 @@ func (a *App) registerCommands() {
 		a.newCompletionCmd(),
 		a.newConfigCmd(),
 		a.newChatCmd(),
+		a.newThreadCmd(),
 	)
 }
 

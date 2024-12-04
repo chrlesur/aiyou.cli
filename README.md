@@ -5,12 +5,16 @@ aiyou.cli est une interface en ligne de commande pour interagir avec les assista
 
 ## Caractéristiques
 
-- Chat en mode interactif avec les assistants AI.YOU
-- Envoi de messages uniques à l'assistant
-- Support pour des instructions supplémentaires
+ Chat avec les assistants AI.YOU :
+- Mode interactif pour des conversations continues
+- Mode message unique pour des requêtes rapides
+- Streaming des réponses en temps réel
+- Sélection flexible des assistants
+- Cache intelligent des réponses fréquentes
+- Gestion des sessions et de l'authentification
 - Mode debug pour un logging détaillé
 - Mode silencieux pour minimiser les sorties
-- Affichage des informations de l'assistant
+- Configuration flexible via fichier ou variables d'environnement
 
 ## Installation
 
@@ -21,21 +25,27 @@ Assurez-vous d'avoir Go 1.16 ou une version ultérieure installée sur votre sys
 ### Étapes d'installation
 
 1. Clonez ce dépôt :
+   
    ```
    git clone https://github.com/chrlesur/aiyou.cli.git
    ```
+
 2. Naviguez vers le répertoire du projet :
+   
    ```
    cd aiyou.cli
    ```
+
 3. Construisez le projet :
 
    - Pour Windows :
+  
    ```
    go build -o aiyou.cli.exe ./cmd/aiyou.cli
    ```
 
    - Pour Linux et macOS :
+  
    ```
    go build -o aiyou.cli ./cmd/aiyou.cli
    ```
@@ -45,6 +55,7 @@ Assurez-vous d'avoir Go 1.16 ou une version ultérieure installée sur votre sys
 #### Windows
 
 Assurez-vous que votre `%GOPATH%\bin` est dans votre PATH. Vous pouvez l'ajouter en exécutant cette commande dans PowerShell :
+
 ```
 $env:Path += ";$env:GOPATH\bin"
 ```
@@ -52,10 +63,13 @@ $env:Path += ";$env:GOPATH\bin"
 #### Linux et macOS
 
 Ajoutez la ligne suivante à votre fichier `.bashrc`, `.zshrc` ou équivalent :
+
 ```
 export PATH=$PATH:$(go env GOPATH)/bin
 ```
+
 Puis rechargez votre configuration de shell :
+
 ```
 source ~/.bashrc  # ou ~/.zshrc, selon votre shell
 ```
@@ -91,6 +105,35 @@ Pour plus d'options, utilisez la commande d'aide :
 ./aiyou.cli --help
 ```
 
+### Chat avec un Assistant
+
+1. Message unique :
+   aiyou chat "Votre message" # Utilise l'assistant par défaut
+   aiyou chat -a asst_xLMDUf2cWAKaU8UBFFp1LsLA "Votre message" # Assistant spécifique
+2. Mode interactif :
+   aiyou chat -i # Démarre une session interactive
+   aiyou chat -i -a asst_xLMDUf2cWAKaU8UBFFp1LsLA # Avec un assistant spécifique
+3. Streaming des réponses :
+   aiyou chat -s "Votre message" # Affiche la réponse en temps réel
+4. Options avancées :
+   aiyou chat --temperature 0.7 "Votre message" # Ajuste la créativité
+   aiyou chat --max-tokens 100 "Votre message" # Limite la longueur de la réponse
+
+## Exemples d'Utilisation
+
+1. Chat simple avec l'assistant par défaut :
+aiyou chat "Quelle est la capitale de la France ?"
+
+2. Session interactive avec streaming :
+> Explique-moi la relativité
+> Peux-tu simplifier ?
+> exit
+aiyou chat -i -s
+[Assistant répond en temps réel...]
+[Assistant répond...]
+
+3. Utilisation avec un assistant spécifique et des options :
+aiyou chat -a asst_xLMDUf2cWAKaU8UBFFp1LsLA --temperature 0.8 "Génère une histoire créative"
 ## Documentation
 
 Pour une documentation plus détaillée sur chaque module, veuillez consulter les fichiers suivants :

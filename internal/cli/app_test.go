@@ -87,6 +87,7 @@ func TestApp_Commands(t *testing.T) {
 		"login":      true,
 		"logout":     true,
 		"chat":       true,
+		"thread":     true,
 	}
 
 	// Verify all expected commands are registered

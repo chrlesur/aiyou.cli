@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -48,6 +49,15 @@ func New() (*Config, error) {
 	v := viper.New()
 	v.SetEnvPrefix("AIYOU")
 	v.AutomaticEnv()
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+	// Définir explicitement les liens avec les variables d'environnement
+	v.BindEnv("log_level")
+	v.BindEnv("api_endpoint")
+	v.BindEnv("api_timeout")
+	v.BindEnv("max_threads")
+	v.BindEnv("debug")
+	v.BindEnv("show_progress")
 
 	// Setup config paths
 	configDir, err := ensureConfigDir()
@@ -62,6 +72,14 @@ func New() (*Config, error) {
 	v.SetConfigType("yaml")
 	v.AddConfigPath(configDir)
 
+	// Définir les valeurs par défaut
+	v.SetDefault("api_endpoint", cfg.APIEndpoint)
+	v.SetDefault("api_timeout", cfg.APITimeout)
+	v.SetDefault("log_level", cfg.LogLevel)
+	v.SetDefault("log_format", cfg.LogFormat)
+	v.SetDefault("max_threads", cfg.MaxThreads)
+	v.SetDefault("show_progress", cfg.ShowProgress)
+
 	// Read config file
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
@@ -72,6 +90,11 @@ func New() (*Config, error) {
 	// Merge configuration
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
+	}
+
+	// Vérifier les variables d'environnement explicitement
+	if envLogLevel := os.Getenv("AIYOU_LOG_LEVEL"); envLogLevel != "" {
+		cfg.LogLevel = envLogLevel
 	}
 
 	// Validate configuration

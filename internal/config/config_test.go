@@ -8,17 +8,22 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	// Nettoyer toute variable d'environnement existante
+	os.Unsetenv("AIYOU_LOG_LEVEL")
+
 	// Test de la configuration par défaut
 	cfg, err := New()
 	assert.NoError(t, err)
 	assert.NotNil(t, cfg)
-	assert.Equal(t, "info", cfg.LogLevel)
+	assert.Equal(t, "info", cfg.LogLevel) // La valeur par défaut doit être "info"
 
 	// Test avec variable d'environnement
 	os.Setenv("AIYOU_LOG_LEVEL", "debug")
-	cfg, err = New()
+	defer os.Unsetenv("AIYOU_LOG_LEVEL") // Nettoyage pour les tests suivants
+
+	cfg2, err := New()
 	assert.NoError(t, err)
-	assert.Equal(t, "debug", cfg.LogLevel)
+	assert.Equal(t, "debug", cfg2.LogLevel)
 }
 
 func TestConfig_validate(t *testing.T) {

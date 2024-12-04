@@ -6,7 +6,6 @@ import (
 	"github.com/chrlesur/aiyou.golib/pkg/aiyou"
 )
 
-// AIClient définit l'interface pour interagir avec le service AI
 type AIClient interface {
 	// Méthodes de chat
 	CreateChatCompletion(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.ChatCompletionResponse, error)
@@ -22,4 +21,9 @@ type AIClient interface {
 	IsAuthenticated() bool
 	Authenticate(email, password string) error
 	RefreshToken() error
+
+	// Nouvelles méthodes pour les threads
+	GetConversation(ctx context.Context, threadID string) (*aiyou.ConversationThread, error)
+	GetUserThreads(ctx context.Context, params *aiyou.UserThreadsParams) (*aiyou.UserThreadsOutput, error)
+	DeleteThread(ctx context.Context, threadID string) error
 }

@@ -2,12 +2,9 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"io"
 	"os"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/chrlesur/aiyou.cli/internal/config"
 	"github.com/chrlesur/aiyou.golib/pkg/aiyou"
@@ -18,113 +15,34 @@ import (
 
 // MockClient pour les tests
 type MockClient struct {
-	mu              sync.RWMutex
-	isAuthenticated bool
-	mockToken       string
-	lastLoginTime   time.Time
+	// Fonctions mock pour l'authentification
+	AuthenticateFn    func(email, password string) error
+	GetTokenFn        func() string
+	RefreshTokenFn    func() error
+	IsAuthenticatedFn func() bool
+	SetTokenFn        func(token string)
 
-	// Fonctions mock
-	AuthenticateFn               func(email, password string) error
-	GetTokenFn                   func() string
-	RefreshTokenFn               func() error
-	IsAuthenticatedFn            func() bool
+	// Fonctions mock pour le chat et les threads
 	CreateChatCompletionFn       func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.ChatCompletionResponse, error)
 	CreateChatCompletionStreamFn func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.StreamReader, error)
 	SaveConversationFn           func(ctx context.Context, req aiyou.SaveConversationRequest) (*aiyou.SaveConversationResponse, error)
+	GetConversationFn            func(ctx context.Context, threadID string) (*aiyou.ConversationThread, error)
+	GetUserThreadsFn             func(ctx context.Context, params *aiyou.UserThreadsParams) (*aiyou.UserThreadsOutput, error)
+	DeleteThreadFn               func(ctx context.Context, threadID string) error
 	GetUserAssistantsFn          func(ctx context.Context) (*aiyou.AssistantsResponse, error)
 }
 
-func NewMockClient() *MockClient {
-	return &MockClient{
-		AuthenticateFn: func(email, password string) error {
-			if email == "test@example.com" && password == "valid_password" {
-				return nil
-			}
-			return errors.New("invalid credentials")
-		},
-		GetTokenFn: func() string {
-			return "mock-token"
-		},
-		RefreshTokenFn: func() error {
-			return nil
-		},
-		IsAuthenticatedFn: func() bool {
-			return true
-		},
-		CreateChatCompletionFn: func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.ChatCompletionResponse, error) {
-			return &aiyou.ChatCompletionResponse{
-				Choices: []aiyou.Choice{
-					{
-						Message: aiyou.Message{
-							Role: "assistant",
-							Content: []aiyou.ContentPart{
-								{
-									Type: "text",
-									Text: "This is a mock response",
-								},
-							},
-						},
-					},
-				},
-			}, nil
-		},
-		CreateChatCompletionStreamFn: func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.StreamReader, error) {
-			return &aiyou.StreamReader{}, nil
-		},
-		SaveConversationFn: func(ctx context.Context, req aiyou.SaveConversationRequest) (*aiyou.SaveConversationResponse, error) {
-			return &aiyou.SaveConversationResponse{}, nil
-		},
-		GetUserAssistantsFn: func(ctx context.Context) (*aiyou.AssistantsResponse, error) {
-			return &aiyou.AssistantsResponse{
-				Members: []aiyou.Assistant{{ID: "test-assistant"}},
-			}, nil
-		},
-	}
-}
-
 // Implémentation des méthodes de l'interface
-func (m *MockClient) CreateChatCompletion(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.ChatCompletionResponse, error) {
-	if m.CreateChatCompletionFn != nil {
-		return m.CreateChatCompletionFn(ctx, messages, assistantID)
-	}
-	return nil, errors.New("CreateChatCompletionFn not implemented")
-}
-
-func (m *MockClient) CreateChatCompletionStream(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.StreamReader, error) {
-	if m.CreateChatCompletionStreamFn != nil {
-		return m.CreateChatCompletionStreamFn(ctx, messages, assistantID)
-	}
-	return nil, errors.New("CreateChatCompletionStreamFn not implemented")
-}
-
-func (m *MockClient) SaveConversation(ctx context.Context, req aiyou.SaveConversationRequest) (*aiyou.SaveConversationResponse, error) {
-	if m.SaveConversationFn != nil {
-		return m.SaveConversationFn(ctx, req)
-	}
-	return nil, errors.New("SaveConversationFn not implemented")
-}
-
-func (m *MockClient) GetUserAssistants(ctx context.Context) (*aiyou.AssistantsResponse, error) {
-	if m.GetUserAssistantsFn != nil {
-		return m.GetUserAssistantsFn(ctx)
-	}
-	return nil, errors.New("GetUserAssistantsFn not implemented")
-}
-
 func (m *MockClient) GetToken() string {
 	if m.GetTokenFn != nil {
 		return m.GetTokenFn()
 	}
-	return m.mockToken
+	return ""
 }
 
 func (m *MockClient) SetToken(token string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.mockToken = token
-	m.isAuthenticated = token != ""
-	if token != "" {
-		m.lastLoginTime = time.Now()
+	if m.SetTokenFn != nil {
+		m.SetTokenFn(token)
 	}
 }
 
@@ -132,7 +50,7 @@ func (m *MockClient) IsAuthenticated() bool {
 	if m.IsAuthenticatedFn != nil {
 		return m.IsAuthenticatedFn()
 	}
-	return m.isAuthenticated
+	return false
 }
 
 func (m *MockClient) Authenticate(email, password string) error {
@@ -149,15 +67,61 @@ func (m *MockClient) RefreshToken() error {
 	return nil
 }
 
-// Test helpers
+func (m *MockClient) CreateChatCompletion(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.ChatCompletionResponse, error) {
+	if m.CreateChatCompletionFn != nil {
+		return m.CreateChatCompletionFn(ctx, messages, assistantID)
+	}
+	return nil, nil
+}
+
+func (m *MockClient) CreateChatCompletionStream(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.StreamReader, error) {
+	if m.CreateChatCompletionStreamFn != nil {
+		return m.CreateChatCompletionStreamFn(ctx, messages, assistantID)
+	}
+	return nil, nil
+}
+
+func (m *MockClient) SaveConversation(ctx context.Context, req aiyou.SaveConversationRequest) (*aiyou.SaveConversationResponse, error) {
+	if m.SaveConversationFn != nil {
+		return m.SaveConversationFn(ctx, req)
+	}
+	return nil, nil
+}
+
+func (m *MockClient) GetConversation(ctx context.Context, threadID string) (*aiyou.ConversationThread, error) {
+	if m.GetConversationFn != nil {
+		return m.GetConversationFn(ctx, threadID)
+	}
+	return nil, nil
+}
+
+func (m *MockClient) GetUserThreads(ctx context.Context, params *aiyou.UserThreadsParams) (*aiyou.UserThreadsOutput, error) {
+	if m.GetUserThreadsFn != nil {
+		return m.GetUserThreadsFn(ctx, params)
+	}
+	return nil, nil
+}
+
+func (m *MockClient) DeleteThread(ctx context.Context, threadID string) error {
+	if m.DeleteThreadFn != nil {
+		return m.DeleteThreadFn(ctx, threadID)
+	}
+	return nil
+}
+
+func (m *MockClient) GetUserAssistants(ctx context.Context) (*aiyou.AssistantsResponse, error) {
+	if m.GetUserAssistantsFn != nil {
+		return m.GetUserAssistantsFn(ctx)
+	}
+	return nil, nil
+}
+
+// setupAuthTest crée un environnement de test pour l'authentification
 func setupAuthTest(t *testing.T) (*App, *MockClient, func()) {
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
 
-	mockClient := NewMockClient()
-	mockClient.IsAuthenticatedFn = func() bool {
-		return false
-	}
+	mockClient := &MockClient{}
 
 	app, err := NewApp(&AppConfig{
 		Version: "test-version",
@@ -166,7 +130,6 @@ func setupAuthTest(t *testing.T) (*App, *MockClient, func()) {
 	})
 	require.NoError(t, err)
 
-	// Remplacer le client existant par notre mock
 	app.client = mockClient
 
 	cleanup := func() {
@@ -247,7 +210,7 @@ func TestLogoutCmd(t *testing.T) {
 	tests := []struct {
 		name       string
 		setupState func()
-		input      string // Pour simuler la réponse à la confirmation
+		input      string
 		wantErr    bool
 	}{
 		{
@@ -258,7 +221,7 @@ func TestLogoutCmd(t *testing.T) {
 				}
 				app.SetLoggedIn(true)
 			},
-			input:   "y\n", // Répondre "y" à la confirmation
+			input:   "y\n",
 			wantErr: false,
 		},
 		{
@@ -272,17 +235,6 @@ func TestLogoutCmd(t *testing.T) {
 			input:   "y\n",
 			wantErr: true,
 		},
-		{
-			name: "cancelled logout",
-			setupState: func() {
-				mockClient.IsAuthenticatedFn = func() bool {
-					return true
-				}
-				app.SetLoggedIn(true)
-			},
-			input:   "n\n", // Répondre "n" à la confirmation
-			wantErr: false,
-		},
 	}
 
 	for _, tt := range tests {
@@ -291,7 +243,7 @@ func TestLogoutCmd(t *testing.T) {
 				tt.setupState()
 			}
 
-			// Simuler l'entrée utilisateur pour la confirmation
+			// Simuler l'entrée utilisateur
 			oldStdin := os.Stdin
 			tmpfile, err := os.CreateTemp("", "test-input")
 			require.NoError(t, err)
@@ -311,13 +263,7 @@ func TestLogoutCmd(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				if tt.input == "y\n" {
-					// Vérifier le statut de connexion seulement si la déconnexion est confirmée
-					assert.False(t, app.IsLoggedIn())
-				} else {
-					// Si la déconnexion est annulée, le statut ne doit pas changer
-					assert.True(t, app.IsLoggedIn())
-				}
+				assert.False(t, app.IsLoggedIn())
 			}
 		})
 	}

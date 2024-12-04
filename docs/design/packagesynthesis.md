@@ -328,6 +328,14 @@ type UserThreadsParams struct {
     ItemsPerPage int    `json:"itemsPerPage,omitempty"`
     Search       string `json:"search,omitempty"`
 }
+
+// UserThreadsOutput represents the response containing user threads.
+type UserThreadsOutput struct {
+	Threads      []ConversationThread `json:"threads"`
+	TotalItems   int                  `json:"totalItems"`
+	ItemsPerPage int                  `json:"itemsPerPage"`
+	CurrentPage  int                  `json:"currentPage"`
+}
 ```
 
 ## Utility Functions
