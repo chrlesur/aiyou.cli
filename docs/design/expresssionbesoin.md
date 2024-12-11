@@ -8,45 +8,65 @@ The AI.YOU CLI is a command-line client for the AI.YOU API, leveraging the offic
 ## 2. Existing Functionalities to Maintain
 
 ### 2.1 Authentication
+
 - Login to the AI.YOU API with email and password
 - Management of authentication tokens
 
 ### 2.2 Interaction with Assistants
+
 - Sending text messages to a specified assistant
 - Support for interactive mode for continuous conversations
 - Support for non-interactive mode for one-time queries
 
 ### 2.3 Input/Output Management
+
 - Ability to use the application with command-line pipes
 - Reading inputs from stdin if no arguments are provided
 
 ### 2.4 Configuration
+
 - Loading configuration from a .env file
 - Configuration options via command-line flags
 
 ### 2.5 Logging and Debugging
+
 - Debug mode to display detailed information
 - Quiet mode to limit outputs
 
 ## 3. New Functionalities to Add
 
 ### 3.1 Audio Support
+
 - Transcription of audio files to text
 - Supported formats: MP3, WAV, M4A
 - File size limit: 25 MB
 - Usage example: `aiyou transcribe audio.mp3 --language en`
 
 ### 3.2 Advanced Thread Management
+
 - Creation, retrieval, and deletion of conversation threads
 - Listing of existing threads with pagination
 - Usage example: `aiyou list-threads --page 1 --items-per-page 10`
+- Creation, retrieval, and deletion of conversation threads
+- Listing of existing threads with pagination
+- Search functionality for threads
+- Proper error handling and validation for thread operations
+- Caching of thread information for improved performance
+- Usage examples:
+  - `aiyou create-thread`
+  - `aiyou list-threads --page 1 --items-per-page 10`
+  - `aiyou view-thread <thread-id>`
+  - `aiyou delete-thread <thread-id>`
+  - `aiyou search-threads <query>`
 
 ### 3.3 Response Streaming
+
 - Option to receive assistant responses in streaming mode
 - Real-time display of partial responses
 - Usage example: `aiyou chat --stream "What is the capital of France?"`
 
 ### 3.4 Advanced Model Parameters
+
 - Options to adjust model parameters:
   - Temperature (range: 0.0 to 1.0)
   - Top_p (range: 0.0 to 1.0)
@@ -54,9 +74,18 @@ The AI.YOU CLI is a command-line client for the AI.YOU API, leveraging the offic
 - Usage example: `aiyou chat --temperature 0.7 --top-p 0.9 --max-tokens 100 "Generate a short story"`
 
 ### 3.5 Assistant Management
+
 - Listing of available assistants
 - Selection of an assistant for conversation
 - Usage example: `aiyou list-assistants` and `aiyou chat --assistant-id "asst_123" "Hello"`
+- Listing of available assistants with pagination
+- Selection of an assistant for conversation
+- Caching of assistant information
+- Search functionality for assistants
+- Usage examples:
+  - `aiyou list-assistants --page 1 --items-per-page 20`
+  - `aiyou chat --assistant-id "asst_123" "Hello"`
+  - `aiyou search-assistants <query>`
 
 ### 3.6 Caching System
 - Implementation of an in-memory cache for frequently accessed data
@@ -105,11 +134,27 @@ The AI.YOU CLI is a command-line client for the AI.YOU API, leveraging the offic
 - Validation and escaping of user inputs to prevent injections
 
 ### 4.8 Caching
+
 - Implementation of a thread-safe in-memory cache
 - Support for different cache types with configurable TTLs
 - Automatic cleanup of expired cache entries
 - Cache size limitations and eviction policies
 - Cache statistics for monitoring and optimization
+- Specific caching strategies for thread and assistant information
+
+### 4.9 Error Handling and Validation
+
+- Comprehensive error handling for all API interactions
+- Input validation for all user-provided data
+- Clear and informative error messages for users
+- Logging of errors for debugging purposes
+
+### 4.10 Performance Considerations
+
+- Implementation of pagination for listing operations
+- Efficient use of caching to reduce API calls
+- Performance testing for thread and assistant management operations
+- Optimization of search functionalities
 
 ## 5. Legal and Publication Constraints
 

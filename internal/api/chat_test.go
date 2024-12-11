@@ -256,3 +256,74 @@ func TestChatManager_EndConversation(t *testing.T) {
 		})
 	}
 }
+
+func TestChatManager_SendMessageStream(t *testing.T) {
+    ctx := context.Background()
+
+    tests := []struct {
+        name        string
+        message     string
+        assistantID string
+        setupMock   func(*MockClient)
+        wantErr     bool
+        errType     error
+    }{
+        {
+            name:        "successful stream",
+            message:     "Hello AI",
+            assistantID: "test-assistant",
+            setupMock: func(mockClient *MockClient) {
+                mockClient.IsAuthenticatedFn = func() bool { return true }
+                mockClient.CreateChatCompletionStreamFn = func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.StreamReader, error) {
+                    return &aiyou.StreamReader{}, nil
+                }
+            },
+            wantErr: false,
+        },
+        {
+            name:        "unauthenticated",
+            message:     "Hello",
+            assistantID: "test-assistant",
+            setupMock: func(mockClient *MockClient) {
+                mockClient.IsAuthenticatedFn = func() bool { return false }
+            },
+            wantErr: true,
+            errType: ErrNotAuthenticated,
+        },
+        {
+            name:        "empty message",
+            message:     "",
+            assistantID: "test-assistant",
+            setupMock: func(mockClient *MockClient) {
+                mockClient.IsAuthenticatedFn = func() bool { return true }
+            },
+            wantErr: true,
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            cm, mockClient, cache, cleanup := setupChatTest(t)
+            defer cleanup()
+
+            if tt.setupMock != nil {
+                tt.setupMock(mockClient)
+            }
+
+            err := cache.Clear(ctx)
+            require.NoError(t, err)
+
+            stream, err := cm.SendMessageStream(ctx, tt.message, tt.assistantID)
+            if tt.wantErr {
+                assert.Error(t, err)
+                if tt.errType != nil {
+                    assert.ErrorIs(t, err, tt.errType)
+                }
+                assert.Nil(t, stream)
+            } else {
+                assert.NoError(t, err)
+                assert.NotNil(t, stream)
+            }
+        })
+    }
+}

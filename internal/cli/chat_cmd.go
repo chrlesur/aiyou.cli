@@ -28,11 +28,11 @@ Examples:
  # Start an interactive session
  aiyou chat -i
 
- # Chat with a specific assistant
- aiyou chat -a asst_123 "Hello!"
+ # Enable streaming response
+ aiyou chat -s "Tell me a story"
 
- # Enable response streaming
- aiyou chat -s "Tell me a story"`,
+ # Use advanced parameters
+ aiyou chat --temperature 0.7 --max-tokens 100 "Generate a creative story"`,
 		RunE: a.runChat,
 	}
 
@@ -40,13 +40,15 @@ Examples:
 	chatCmd.Flags().StringP("assistant", "a", "", "ID of the assistant to chat with")
 	chatCmd.Flags().BoolP("interactive", "i", false, "Start an interactive chat session")
 	chatCmd.Flags().BoolP("stream", "s", false, "Enable response streaming")
+
+	// Ajout des nouveaux flags pour les paramètres avancés
 	chatCmd.Flags().Float32P("temperature", "t", 0.7, "Response temperature (0.0-1.0)")
 	chatCmd.Flags().Int("max-tokens", 0, "Maximum tokens in response (0 for no limit)")
 
 	return chatCmd
 }
 
-// runChat handles both interactive and single-message chat modes
+// Modifions runChat pour gérer l'option de streaming
 func (a *App) runChat(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
@@ -56,6 +58,11 @@ func (a *App) runChat(cmd *cobra.Command, args []string) error {
 	stream, _ := cmd.Flags().GetBool("stream")
 	temperature, _ := cmd.Flags().GetFloat32("temperature")
 	maxTokens, _ := cmd.Flags().GetInt("max-tokens")
+
+	// Validate temperature
+	if temperature < 0.0 || temperature > 1.0 {
+		return fmt.Errorf("temperature must be between 0.0 and 1.0")
+	}
 
 	// Validate assistant ID
 	if assistantID == "" {
@@ -81,10 +88,13 @@ func (a *App) runChat(cmd *cobra.Command, args []string) error {
 	return a.sendSingleMessage(ctx, message, assistantID, stream, temperature, maxTokens)
 }
 
-// runInteractiveChat handles interactive chat sessions
 func (a *App) runInteractiveChat(ctx context.Context, assistantID string, stream bool, temperature float32, maxTokens int) error {
 	a.log.Info("Starting interactive chat session. Type 'exit' or press Ctrl+C to end.")
 	a.log.Infof("Using assistant: %s", assistantID)
+	if stream {
+		a.log.Info("Streaming mode enabled")
+	}
+	a.log.Debugf("Parameters: temperature=%.2f, max_tokens=%d", temperature, maxTokens)
 
 	// Start chat session
 	err := a.chatManager.StartConversation(ctx, assistantID)
@@ -115,7 +125,7 @@ func (a *App) runInteractiveChat(ctx context.Context, assistantID string, stream
 
 		// Send message and handle response
 		if stream {
-			err = a.handleStreamingResponse(ctx, input, assistantID, temperature, maxTokens)
+			err = a.handleStreamingResponse(ctx, input, assistantID)
 		} else {
 			err = a.handleSingleResponse(ctx, input, assistantID, temperature, maxTokens)
 		}
@@ -129,10 +139,10 @@ func (a *App) runInteractiveChat(ctx context.Context, assistantID string, stream
 	return scanner.Err()
 }
 
-// sendSingleMessage handles one-off message sending
+// runInteractiveChat handles interactive chat sessions
 func (a *App) sendSingleMessage(ctx context.Context, message, assistantID string, stream bool, temperature float32, maxTokens int) error {
 	if stream {
-		return a.handleStreamingResponse(ctx, message, assistantID, temperature, maxTokens)
+		return a.handleStreamingResponse(ctx, message, assistantID)
 	}
 	return a.handleSingleResponse(ctx, message, assistantID, temperature, maxTokens)
 }
@@ -158,8 +168,8 @@ func (a *App) handleSingleResponse(ctx context.Context, message, assistantID str
 	return nil
 }
 
-// handleStreamingResponse handles streaming responses from the assistant
-func (a *App) handleStreamingResponse(ctx context.Context, message, assistantID string, temperature float32, maxTokens int) error {
+// Ajoutons la fonction pour gérer les réponses en streaming
+func (a *App) handleStreamingResponse(ctx context.Context, message, assistantID string) error {
 	stream, err := a.chatManager.SendMessageStream(ctx, message, assistantID)
 	if err != nil {
 		return fmt.Errorf("failed to start message stream: %w", err)
