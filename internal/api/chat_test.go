@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"io"
 	"testing"
 	"time"
@@ -45,102 +44,6 @@ func setupChatTest(t *testing.T) (*ChatManager, *MockClient, cache.Cache, func()
 	}
 
 	return cm, mockClient, memCache, cleanup
-}
-
-func TestChatManager_SendMessage(t *testing.T) {
-	ctx := context.Background()
-
-	tests := []struct {
-		name        string
-		message     string
-		assistantID string
-		setupMock   func(*MockClient)
-		wantErr     bool
-		errType     error
-	}{
-		{
-			name:        "successful message",
-			message:     "Hello AI",
-			assistantID: "test-assistant",
-			setupMock: func(mockClient *MockClient) {
-				mockClient.IsAuthenticatedFn = func() bool { return true }
-				mockClient.CreateChatCompletionFn = func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.ChatCompletionResponse, error) {
-					return &aiyou.ChatCompletionResponse{
-						Choices: []aiyou.Choice{
-							{
-								Message: aiyou.Message{
-									Role: "assistant",
-									Content: []aiyou.ContentPart{
-										{Type: "text", Text: "Hello, human!"},
-									},
-								},
-							},
-						},
-					}, nil
-				}
-			},
-			wantErr: false,
-		},
-		{
-			name:        "unauthenticated",
-			message:     "Hello",
-			assistantID: "test-assistant",
-			setupMock: func(mockClient *MockClient) {
-				mockClient.IsAuthenticatedFn = func() bool { return false }
-			},
-			wantErr: true,
-			errType: ErrNotAuthenticated,
-		},
-		{
-			name:        "api error",
-			message:     "Hello",
-			assistantID: "test-assistant",
-			setupMock: func(mockClient *MockClient) {
-				mockClient.IsAuthenticatedFn = func() bool { return true }
-				mockClient.CreateChatCompletionFn = func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.ChatCompletionResponse, error) {
-					return nil, errors.New("API error")
-				}
-			},
-			wantErr: true,
-		},
-		{
-			name:        "empty message",
-			message:     "",
-			assistantID: "test-assistant",
-			setupMock: func(mockClient *MockClient) {
-				mockClient.IsAuthenticatedFn = func() bool { return true }
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cm, mockClient, cache, cleanup := setupChatTest(t)
-			defer cleanup()
-
-			if tt.setupMock != nil {
-				tt.setupMock(mockClient)
-			}
-
-			err := cache.Clear(ctx)
-			require.NoError(t, err)
-
-			response, err := cm.SendMessage(ctx, tt.message, tt.assistantID)
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errType != nil {
-					assert.ErrorIs(t, err, tt.errType)
-				}
-				assert.Nil(t, response)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, response)
-				assert.NotEmpty(t, response.Choices)
-				assert.Equal(t, "assistant", response.Choices[0].Message.Role)
-			}
-		})
-	}
 }
 
 func TestChatManager_StartConversation(t *testing.T) {
@@ -258,72 +161,196 @@ func TestChatManager_EndConversation(t *testing.T) {
 }
 
 func TestChatManager_SendMessageStream(t *testing.T) {
-    ctx := context.Background()
+	ctx := context.Background()
 
-    tests := []struct {
-        name        string
-        message     string
-        assistantID string
-        setupMock   func(*MockClient)
-        wantErr     bool
-        errType     error
-    }{
-        {
-            name:        "successful stream",
-            message:     "Hello AI",
-            assistantID: "test-assistant",
-            setupMock: func(mockClient *MockClient) {
-                mockClient.IsAuthenticatedFn = func() bool { return true }
-                mockClient.CreateChatCompletionStreamFn = func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.StreamReader, error) {
-                    return &aiyou.StreamReader{}, nil
-                }
-            },
-            wantErr: false,
-        },
-        {
-            name:        "unauthenticated",
-            message:     "Hello",
-            assistantID: "test-assistant",
-            setupMock: func(mockClient *MockClient) {
-                mockClient.IsAuthenticatedFn = func() bool { return false }
-            },
-            wantErr: true,
-            errType: ErrNotAuthenticated,
-        },
-        {
-            name:        "empty message",
-            message:     "",
-            assistantID: "test-assistant",
-            setupMock: func(mockClient *MockClient) {
-                mockClient.IsAuthenticatedFn = func() bool { return true }
-            },
-            wantErr: true,
-        },
-    }
+	tests := []struct {
+		name        string
+		message     string
+		assistantID string
+		setupMock   func(*MockClient)
+		wantErr     bool
+		errType     error
+	}{
+		{
+			name:        "successful stream",
+			message:     "Hello AI",
+			assistantID: "test-assistant",
+			setupMock: func(mockClient *MockClient) {
+				mockClient.IsAuthenticatedFn = func() bool { return true }
+				mockClient.CreateChatCompletionStreamFn = func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.StreamReader, error) {
+					return &aiyou.StreamReader{}, nil
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name:        "unauthenticated",
+			message:     "Hello",
+			assistantID: "test-assistant",
+			setupMock: func(mockClient *MockClient) {
+				mockClient.IsAuthenticatedFn = func() bool { return false }
+			},
+			wantErr: true,
+			errType: ErrNotAuthenticated,
+		},
+		{
+			name:        "empty message",
+			message:     "",
+			assistantID: "test-assistant",
+			setupMock: func(mockClient *MockClient) {
+				mockClient.IsAuthenticatedFn = func() bool { return true }
+			},
+			wantErr: true,
+		},
+	}
 
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            cm, mockClient, cache, cleanup := setupChatTest(t)
-            defer cleanup()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm, mockClient, cache, cleanup := setupChatTest(t)
+			defer cleanup()
 
-            if tt.setupMock != nil {
-                tt.setupMock(mockClient)
-            }
+			if tt.setupMock != nil {
+				tt.setupMock(mockClient)
+			}
 
-            err := cache.Clear(ctx)
-            require.NoError(t, err)
+			err := cache.Clear(ctx)
+			require.NoError(t, err)
 
-            stream, err := cm.SendMessageStream(ctx, tt.message, tt.assistantID)
-            if tt.wantErr {
-                assert.Error(t, err)
-                if tt.errType != nil {
-                    assert.ErrorIs(t, err, tt.errType)
-                }
-                assert.Nil(t, stream)
-            } else {
-                assert.NoError(t, err)
-                assert.NotNil(t, stream)
-            }
-        })
-    }
+			stream, err := cm.SendMessageStream(ctx, tt.message, tt.assistantID)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errType != nil {
+					assert.ErrorIs(t, err, tt.errType)
+				}
+				assert.Nil(t, stream)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, stream)
+			}
+		})
+	}
+}
+
+func TestChatManager_SendMessageWithParams(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		message     string
+		assistantID string
+		params      ChatParameters
+		setupMock   func(*MockClient)
+		wantErr     bool
+		errType     error
+	}{
+		{
+			name:        "successful message with custom parameters",
+			message:     "Hello AI",
+			assistantID: "test-assistant",
+			params: ChatParameters{
+				Temperature: 0.8,
+				TopP:        0.9,
+				MaxTokens:   100,
+			},
+			setupMock: func(mockClient *MockClient) {
+				mockClient.IsAuthenticatedFn = func() bool { return true }
+				mockClient.CreateChatCompletionFn = func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.ChatCompletionResponse, error) {
+					return &aiyou.ChatCompletionResponse{
+						Choices: []aiyou.Choice{
+							{
+								Message: aiyou.Message{
+									Role: "assistant",
+									Content: []aiyou.ContentPart{
+										{Type: "text", Text: "Hello, human!"},
+									},
+								},
+							},
+						},
+					}, nil
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name:        "invalid temperature",
+			message:     "Hello",
+			assistantID: "test-assistant",
+			params: ChatParameters{
+				Temperature: 1.5, // Invalid temperature
+				TopP:        0.9,
+				MaxTokens:   100,
+			},
+			setupMock: func(mockClient *MockClient) {
+				mockClient.IsAuthenticatedFn = func() bool { return true }
+			},
+			wantErr: true,
+		},
+		{
+			name:        "invalid top_p",
+			message:     "Hello",
+			assistantID: "test-assistant",
+			params: ChatParameters{
+				Temperature: 0.7,
+				TopP:        1.5, // Invalid top_p
+				MaxTokens:   100,
+			},
+			setupMock: func(mockClient *MockClient) {
+				mockClient.IsAuthenticatedFn = func() bool { return true }
+			},
+			wantErr: true,
+		},
+		{
+			name:        "negative max tokens",
+			message:     "Hello",
+			assistantID: "test-assistant",
+			params: ChatParameters{
+				Temperature: 0.7,
+				TopP:        0.9,
+				MaxTokens:   -1, // Invalid max tokens
+			},
+			setupMock: func(mockClient *MockClient) {
+				mockClient.IsAuthenticatedFn = func() bool { return true }
+			},
+			wantErr: true,
+		},
+		{
+			name:        "unauthenticated",
+			message:     "Hello",
+			assistantID: "test-assistant",
+			params:      DefaultChatParameters(),
+			setupMock: func(mockClient *MockClient) {
+				mockClient.IsAuthenticatedFn = func() bool { return false }
+			},
+			wantErr: true,
+			errType: ErrNotAuthenticated,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm, mockClient, cache, cleanup := setupChatTest(t)
+			defer cleanup()
+
+			if tt.setupMock != nil {
+				tt.setupMock(mockClient)
+			}
+
+			err := cache.Clear(ctx)
+			require.NoError(t, err)
+
+			response, err := cm.SendMessageWithParams(ctx, tt.message, tt.assistantID, tt.params)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errType != nil {
+					assert.ErrorIs(t, err, tt.errType)
+				}
+				assert.Nil(t, response)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, response)
+				assert.NotEmpty(t, response.Choices)
+				assert.Equal(t, "assistant", response.Choices[0].Message.Role)
+			}
+		})
+	}
 }

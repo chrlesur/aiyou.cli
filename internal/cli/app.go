@@ -98,13 +98,13 @@ type App struct {
 
 // NewApp creates and initializes a new CLI application
 func NewApp(cfg *AppConfig) (*App, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("app config is required")
-	}
+    if cfg == nil {
+        return nil, fmt.Errorf("app config is required")
+    }
 
-	if cfg.Logger == nil {
-		return nil, fmt.Errorf("logger is required")
-	}
+    if cfg.Logger == nil {
+        return nil, fmt.Errorf("logger is required")
+    }
 
 	// Initialize cache
 	cacheConfig := cache.DefaultConfig()
@@ -310,3 +310,20 @@ func (a *App) SetLoggedIn(status bool) {
 func (a *App) IsLoggedIn() bool {
 	return a.isLoggedIn
 }
+
+// startProgress displays a progress indicator with a message
+func (a *App) startProgress(message string) {
+	if !a.cfg.ShowProgress {
+		return
+	}
+	fmt.Printf("%s... ", message)
+}
+
+// stopProgress stops the progress indicator
+func (a *App) stopProgress() {
+	if !a.cfg.ShowProgress {
+		return
+	}
+	fmt.Println("done")
+}
+

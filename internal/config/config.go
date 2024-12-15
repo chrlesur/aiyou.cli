@@ -23,17 +23,18 @@ type Config struct {
 	LogFile   string `mapstructure:"log_file"`
 
 	// Application configuration
-	ConfigDir    string
-	CacheDir     string
-	MaxThreads   int  `mapstructure:"max_threads"`
-	Debug        bool `mapstructure:"debug"`
-	ShowProgress bool `mapstructure:"show_progress"`
+	ConfigDir      string
+	CacheDir       string
+	MaxThreads     int    `mapstructure:"max_threads"`
+	Debug          bool   `mapstructure:"debug"`
+	ShowProgress   bool   `mapstructure:"show_progress"`
+	TokenStorePath string `mapstructure:"token_store_path"`
 }
 
 // defaultConfig returns the default configuration.
 func defaultConfig() *Config {
 	return &Config{
-		APIEndpoint:  "https://api.aiyou.cloud/v1",
+		APIEndpoint:  "https://ai.dragonflygroup.fr",
 		APITimeout:   30,
 		LogLevel:     "info",
 		LogFormat:    "text",
@@ -129,4 +130,70 @@ func ensureConfigDir() (string, error) {
 	}
 
 	return configDir, nil
+}
+
+// Load reads and returns the application configuration
+func Load() (*Config, error) {
+	cfg := &Config{
+		APIEndpoint: "https://ai.dragonflygroup.fr",
+		LogLevel:    "info", // default value
+		MaxThreads:  4,
+		Debug:       false,
+	}
+
+	v := viper.New()
+	v.SetEnvPrefix("AIYOU")
+	v.AutomaticEnv()
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+	// Setup config paths
+	configDir, err := ensureConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup config directory: %w", err)
+	}
+	cfg.ConfigDir = configDir
+	cfg.CacheDir = filepath.Join(configDir, "cache")
+
+	// Configure viper
+	v.SetConfigName("config")
+	v.SetConfigType("yaml")
+	v.AddConfigPath(configDir)
+
+	// Read config file
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return nil, fmt.Errorf("error reading config file: %w", err)
+		}
+	}
+
+	// Handle log level
+	if envLogLevel := os.Getenv("AIYOU_LOG_LEVEL"); envLogLevel != "" {
+		if isValidLogLevel(envLogLevel) {
+			cfg.LogLevel = envLogLevel
+		} else {
+			// Keep default if invalid
+			cfg.LogLevel = "info"
+		}
+	}
+
+	// Handle other environment variables
+	if envAPIEndpoint := os.Getenv("AIYOU_API_ENDPOINT"); envAPIEndpoint != "" {
+		cfg.APIEndpoint = envAPIEndpoint
+	}
+
+	if envDebug := os.Getenv("AIYOU_DEBUG"); envDebug == "true" {
+		cfg.Debug = true
+	}
+
+	return cfg, nil
+}
+
+func isValidLogLevel(level string) bool {
+	validLevels := map[string]bool{
+		"debug": true,
+		"info":  true,
+		"warn":  true,
+		"error": true,
+	}
+	return validLevels[strings.ToLower(level)]
 }

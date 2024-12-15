@@ -26,7 +26,11 @@ func main() {
 	}
 
 	// Initialize logger
-	logger := cli.NewLogger(cfg.LogLevel)
+	logger := logrus.New()
+	logger.SetLevel(logrus.InfoLevel)
+	if cfg.Debug {
+		logger.SetLevel(logrus.DebugLevel)
+	}
 	logger.Info("Starting AI.YOU CLI")
 
 	// Setup signal handling for graceful shutdown
@@ -34,21 +38,34 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Initialize CLI application
-	app, err := cli.NewApp(cfg, logger)
+	app, err := cli.NewApp(&cli.AppConfig{
+		Version: "1.0.0", // Version can be set from build flags
+		Config:  cfg,
+		Logger:  logger,
+	})
 	if err != nil {
 		logger.Fatalf("Failed to initialize CLI application: %v", err)
 	}
 
+	// Create a channel to receive run completion
+	done := make(chan error, 1)
+
 	// Start the application
 	go func() {
-		if err := app.Run(ctx); err != nil {
-			logger.Errorf("Application error: %v", err)
-			cancel()
-		}
+		done <- app.Run(ctx)
 	}()
 
-	// Wait for shutdown signal
-	<-sigChan
-	logger.Info("Shutting down gracefully...")
-	cancel()
+	// Wait for either command completion or shutdown signal
+	select {
+	case err := <-done:
+		if err != nil {
+			logger.Errorf("Application error: %v", err)
+			os.Exit(1)
+		}
+	case <-sigChan:
+		logger.Info("Shutting down gracefully...")
+		cancel()
+		// Wait for the application to finish
+		<-done
+	}
 }
