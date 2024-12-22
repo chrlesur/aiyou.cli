@@ -15,13 +15,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Dans internal/api/assistant_test.go
+
 func setupAssistantTest(t *testing.T) (*AssistantManager, *MockClient, cache.Cache, func()) {
 	// Reset and initialize logger
 	logger.ResetForTest()
 	log := logger.GetLogger()
 	err := log.Configure(logger.Config{
-		LogDir: t.TempDir(), // Use test's temp directory
-		Level: logger.ErrorLevel,
+		LogDir: t.TempDir(),
+		Level:  logger.ErrorLevel,
 		Silent: true,
 	})
 	require.NoError(t, err)
@@ -35,21 +37,22 @@ func setupAssistantTest(t *testing.T) (*AssistantManager, *MockClient, cache.Cac
 
 	cfg := &config.Config{
 		APIEndpoint: "https://test.api.aiyou.cloud",
-		MaxThreads: 4,
+		MaxThreads:  4,
 	}
 
 	am, err := NewAssistantManager(AssistantManagerConfig{
 		Client: mockClient,
-		Cache: memCache,
+		Cache:  memCache,
 		Config: cfg,
 	})
 	require.NoError(t, err)
 
 	cleanup := func() {
+		// Fermer d'abord le logger
+		logger.ResetForTest()
+
+		// Puis le cache
 		memCache.Close()
-		// Réinitialiser le logger pour les autres tests
-		log.SetSilentMode(false)
-		log.SetLevel(logger.InfoLevel)
 	}
 
 	return am, mockClient, memCache, cleanup
@@ -59,11 +62,11 @@ func TestAssistantManager_ListAssistants(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name string
-		setupMock func(*MockClient)
-		wantErr bool
+		name          string
+		setupMock     func(*MockClient)
+		wantErr       bool
 		expectedCount int
-		checkCache bool
+		checkCache    bool
 	}{
 		{
 			name: "successful list",
@@ -74,31 +77,31 @@ func TestAssistantManager_ListAssistants(t *testing.T) {
 						TotalItems: 2,
 						Members: []aiyou.Assistant{
 							{
-								ID: "asst_1",
-								Name: "Assistant 1",
+								ID:    "asst_1",
+								Name:  "Assistant 1",
 								Model: "gpt-4",
 							},
 							{
-								ID: "asst_2",
-								Name: "Assistant 2",
+								ID:    "asst_2",
+								Name:  "Assistant 2",
 								Model: "gpt-3.5-turbo",
 							},
 						},
 					}, nil
 				}
 			},
-			wantErr: false,
+			wantErr:       false,
 			expectedCount: 2,
-			checkCache: true,
+			checkCache:    true,
 		},
 		{
 			name: "unauthenticated",
 			setupMock: func(mockClient *MockClient) {
 				mockClient.IsAuthenticatedFn = func() bool { return false }
 			},
-			wantErr: true,
+			wantErr:       true,
 			expectedCount: 0,
-			checkCache: false,
+			checkCache:    false,
 		},
 		{
 			name: "api error",
@@ -108,9 +111,9 @@ func TestAssistantManager_ListAssistants(t *testing.T) {
 					return nil, errors.New("API error")
 				}
 			},
-			wantErr: true,
+			wantErr:       true,
 			expectedCount: 0,
-			checkCache: false,
+			checkCache:    false,
 		},
 	}
 
@@ -150,14 +153,14 @@ func TestAssistantManager_GetAssistant(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name string
+		name        string
 		assistantID string
-		setupMock func(*MockClient)
-		wantErr bool
-		errType error
+		setupMock   func(*MockClient)
+		wantErr     bool
+		errType     error
 	}{
 		{
-			name: "existing assistant",
+			name:        "existing assistant",
 			assistantID: "asst_1",
 			setupMock: func(mockClient *MockClient) {
 				mockClient.IsAuthenticatedFn = func() bool { return true }
@@ -165,8 +168,8 @@ func TestAssistantManager_GetAssistant(t *testing.T) {
 					return &aiyou.AssistantsResponse{
 						Members: []aiyou.Assistant{
 							{
-								ID: "asst_1",
-								Name: "Test Assistant",
+								ID:    "asst_1",
+								Name:  "Test Assistant",
 								Model: "gpt-4",
 							},
 						},
@@ -176,7 +179,7 @@ func TestAssistantManager_GetAssistant(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "empty assistant ID",
+			name:        "empty assistant ID",
 			assistantID: "",
 			setupMock: func(mockClient *MockClient) {
 				mockClient.IsAuthenticatedFn = func() bool { return true }
@@ -185,7 +188,7 @@ func TestAssistantManager_GetAssistant(t *testing.T) {
 			errType: ErrInvalidAssistantID,
 		},
 		{
-			name: "non-existent assistant",
+			name:        "non-existent assistant",
 			assistantID: "asst_999",
 			setupMock: func(mockClient *MockClient) {
 				mockClient.IsAuthenticatedFn = func() bool { return true }
@@ -232,14 +235,14 @@ func TestAssistantManager_SelectAssistant(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name string
+		name        string
 		assistantID string
-		setupMock func(*MockClient)
-		wantErr bool
-		checkCache bool
+		setupMock   func(*MockClient)
+		wantErr     bool
+		checkCache  bool
 	}{
 		{
-			name: "successful selection",
+			name:        "successful selection",
 			assistantID: "asst_1",
 			setupMock: func(mockClient *MockClient) {
 				mockClient.IsAuthenticatedFn = func() bool { return true }
@@ -247,24 +250,24 @@ func TestAssistantManager_SelectAssistant(t *testing.T) {
 					return &aiyou.AssistantsResponse{
 						Members: []aiyou.Assistant{
 							{
-								ID: "asst_1",
-								Name: "Test Assistant",
+								ID:    "asst_1",
+								Name:  "Test Assistant",
 								Model: "gpt-4",
 							},
 						},
 					}, nil
 				}
 			},
-			wantErr: false,
+			wantErr:    false,
 			checkCache: true,
 		},
 		{
-			name: "invalid assistant ID",
+			name:        "invalid assistant ID",
 			assistantID: "",
 			setupMock: func(mockClient *MockClient) {
 				mockClient.IsAuthenticatedFn = func() bool { return true }
 			},
-			wantErr: true,
+			wantErr:    true,
 			checkCache: false,
 		},
 	}

@@ -187,17 +187,19 @@ func (l *Logger) Error(message string, args ...interface{}) {
 
 // Close properly closes the log file
 // Dans logger.go
+
 func (l *Logger) Close() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	if l.file != nil {
+		// Force sync avant de fermer
 		l.file.Sync()
 		l.file.Close()
 		l.file = nil
 	}
 
-	// Reset to stdout only
+	// Réinitialiser à stdout
 	l.writer = os.Stdout
 	l.logger = log.New(os.Stdout, "", log.LstdFlags)
 }
