@@ -2,13 +2,12 @@ package cli
 
 import (
 	"context"
-	"io"
 	"os"
 	"testing"
 
 	"github.com/chrlesur/aiyou.cli/internal/config"
+	"github.com/chrlesur/aiyou.cli/pkg/logger"
 	"github.com/chrlesur/aiyou.golib/pkg/aiyou"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +31,7 @@ type MockClient struct {
 	GetUserAssistantsFn          func(ctx context.Context) (*aiyou.AssistantsResponse, error)
 }
 
-// Implémentation des méthodes de l'interface
+// Implementation des méthodes de l'interface
 func (m *MockClient) GetToken() string {
 	if m.GetTokenFn != nil {
 		return m.GetTokenFn()
@@ -118,22 +117,32 @@ func (m *MockClient) GetUserAssistants(ctx context.Context) (*aiyou.AssistantsRe
 
 // setupAuthTest crée un environnement de test pour l'authentification
 func setupAuthTest(t *testing.T) (*App, *MockClient, func()) {
-	logger := logrus.New()
-	logger.SetOutput(io.Discard)
+	// Reset and configure logger for tests
+	logger.ResetForTest()
+	log := logger.GetLogger()
+	err := log.Configure(logger.Config{
+		LogDir: t.TempDir(),
+		Level:  logger.ErrorLevel,
+		Silent: true,
+	})
+	require.NoError(t, err)
+
+	log.Debug("Setting up auth test environment")
 
 	mockClient := &MockClient{}
 
 	app, err := NewApp(&AppConfig{
 		Version: "test-version",
 		Config:  &config.Config{},
-		Logger:  logger,
 	})
 	require.NoError(t, err)
 
 	app.client = mockClient
 
 	cleanup := func() {
+		log.Debug("Cleaning up auth test environment")
 		app.Close()
+		logger.ResetForTest()
 	}
 
 	return app, mockClient, cleanup
@@ -142,6 +151,8 @@ func setupAuthTest(t *testing.T) (*App, *MockClient, func()) {
 func TestLoginCmd(t *testing.T) {
 	app, mockClient, cleanup := setupAuthTest(t)
 	defer cleanup()
+
+	log := logger.GetLogger()
 
 	tests := []struct {
 		name      string
@@ -179,6 +190,8 @@ func TestLoginCmd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			log.Debug("Running test case: %s", tt.name)
+
 			if tt.setupMock != nil {
 				tt.setupMock()
 			}
@@ -195,9 +208,11 @@ func TestLoginCmd(t *testing.T) {
 
 			if tt.wantErr {
 				assert.Error(t, err)
+				log.Debug("Expected error occurred: %v", err)
 			} else {
 				assert.NoError(t, err)
 				assert.True(t, app.IsLoggedIn())
+				log.Debug("Login successful")
 			}
 		})
 	}
@@ -206,6 +221,8 @@ func TestLoginCmd(t *testing.T) {
 func TestLogoutCmd(t *testing.T) {
 	app, mockClient, cleanup := setupAuthTest(t)
 	defer cleanup()
+
+	log := logger.GetLogger()
 
 	tests := []struct {
 		name       string
@@ -239,11 +256,13 @@ func TestLogoutCmd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			log.Debug("Running test case: %s", tt.name)
+
 			if tt.setupState != nil {
 				tt.setupState()
 			}
 
-			// Simuler l'entrée utilisateur
+			// Simulate user input
 			oldStdin := os.Stdin
 			tmpfile, err := os.CreateTemp("", "test-input")
 			require.NoError(t, err)
@@ -261,9 +280,11 @@ func TestLogoutCmd(t *testing.T) {
 
 			if tt.wantErr {
 				assert.Error(t, err)
+				log.Debug("Expected error occurred: %v", err)
 			} else {
 				assert.NoError(t, err)
 				assert.False(t, app.IsLoggedIn())
+				log.Debug("Logout successful")
 			}
 		})
 	}

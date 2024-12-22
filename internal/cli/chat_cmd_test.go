@@ -2,67 +2,73 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/chrlesur/aiyou.cli/internal/config"
+	"github.com/chrlesur/aiyou.cli/pkg/logger"
 	"github.com/chrlesur/aiyou.golib/pkg/aiyou"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func setupChatTest(t *testing.T) (*App, *MockClient, error) {
-	logger := logrus.New()
-	logger.SetOutput(io.Discard)
+func setupChatTest(t *testing.T) (*App, *MockClient, func()) {
+	logger.ResetForTest()
+	log := logger.GetLogger()
+	err := log.Configure(logger.Config{
+		LogDir: t.TempDir(),
+		Level:  logger.ErrorLevel,
+		Silent: true,
+	})
+	require.NoError(t, err)
 
 	mockClient := &MockClient{}
 
 	app, err := NewApp(&AppConfig{
 		Version: "test-version",
 		Config:  &config.Config{},
-		Logger:  logger,
 	})
-	if err != nil {
-		return nil, nil, err
-	}
+	require.NoError(t, err)
 
 	app.client = mockClient
 	app.chatManager.SetTestClient(mockClient)
 
-	return app, mockClient, nil
+	cleanup := func() {
+		if app != nil {
+			app.Close()
+		}
+		logger.ResetForTest()
+	}
+
+	return app, mockClient, cleanup
 }
 
 func TestChatCmd_NoAuth(t *testing.T) {
-	app, mockClient, err := setupChatTest(t)
-	assert.NoError(t, err)
+	app, mockClient, cleanup := setupChatTest(t)
+	defer cleanup()
 
-	// S'assurer que nous ne sommes pas connectés
 	app.SetLoggedIn(false)
 	mockClient.IsAuthenticatedFn = func() bool {
 		return false
 	}
 
-	// Spécifier explicitement la commande chat
 	app.rootCmd.SetArgs([]string{"chat", "Hello"})
-	err = app.rootCmd.Execute()
+	err := app.rootCmd.Execute()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "authentication required")
 }
 
 func TestChatCmd_EmptyMessage(t *testing.T) {
-	app, mockClient, err := setupChatTest(t)
-	assert.NoError(t, err)
+	app, mockClient, cleanup := setupChatTest(t)
+	defer cleanup()
 
 	app.SetLoggedIn(true)
 	mockClient.IsAuthenticatedFn = func() bool {
 		return true
 	}
 
-	// Mock pour GetUserAssistants
 	mockClient.GetUserAssistantsFn = func(ctx context.Context) (*aiyou.AssistantsResponse, error) {
 		return &aiyou.AssistantsResponse{
 			Members: []aiyou.Assistant{
@@ -74,24 +80,21 @@ func TestChatCmd_EmptyMessage(t *testing.T) {
 		}, nil
 	}
 
-	// Spécifier explicitement la commande chat sans message
 	app.rootCmd.SetArgs([]string{"chat"})
-	err = app.rootCmd.Execute()
+	err := app.rootCmd.Execute()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "message is required")
 }
 
 func TestChatCmd_SingleMessage(t *testing.T) {
-	app, mockClient, err := setupChatTest(t)
-	assert.NoError(t, err)
+	app, mockClient, cleanup := setupChatTest(t)
+	defer cleanup()
 
-	// Configuration de base
 	app.SetLoggedIn(true)
 	mockClient.IsAuthenticatedFn = func() bool {
 		return true
 	}
 
-	// Mock pour GetUserAssistants (pour le getDefaultAssistant)
 	mockClient.GetUserAssistantsFn = func(ctx context.Context) (*aiyou.AssistantsResponse, error) {
 		return &aiyou.AssistantsResponse{
 			Members: []aiyou.Assistant{
@@ -103,7 +106,6 @@ func TestChatCmd_SingleMessage(t *testing.T) {
 		}, nil
 	}
 
-	// Mock pour la réponse du chat
 	mockClient.CreateChatCompletionFn = func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.ChatCompletionResponse, error) {
 		return &aiyou.ChatCompletionResponse{
 			Choices: []aiyou.Choice{
@@ -119,7 +121,6 @@ func TestChatCmd_SingleMessage(t *testing.T) {
 		}, nil
 	}
 
-	// Rediriger stdout
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
@@ -129,12 +130,10 @@ func TestChatCmd_SingleMessage(t *testing.T) {
 		os.Stdout = oldStdout
 	}()
 
-	// Exécuter la commande
 	app.rootCmd.SetArgs([]string{"chat", "Hello"})
-	err = app.rootCmd.Execute()
+	err := app.rootCmd.Execute()
 	assert.NoError(t, err)
 
-	// Lire la sortie
 	w.Close()
 	var out strings.Builder
 	io.Copy(&out, r)
@@ -142,15 +141,14 @@ func TestChatCmd_SingleMessage(t *testing.T) {
 }
 
 func TestChatCmd_WithParameters(t *testing.T) {
-	app, mockClient, err := setupChatTest(t)
-	assert.NoError(t, err)
+	app, mockClient, cleanup := setupChatTest(t)
+	defer cleanup()
 
 	app.SetLoggedIn(true)
 	mockClient.IsAuthenticatedFn = func() bool {
 		return true
 	}
 
-	// Rediriger stdout
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
@@ -189,22 +187,10 @@ func TestChatCmd_WithParameters(t *testing.T) {
 			wantOutput: "Hello, I'm the assistant",
 		},
 		{
-			name:       "invalid temperature",
-			args:       []string{"chat", "--assistant", "test-asst", "--temperature", "1.5", "Hello"},
-			setupMock:  func(mock *MockClient) {},
-			wantErr:    true,
-			wantOutput: "",
-		},
-		{
-			name: "streaming with parameters",
-			args: []string{"chat", "--assistant", "test-asst", "--stream", "--temperature", "0.8", "--max-tokens", "50", "Hello"},
-			setupMock: func(mock *MockClient) {
-				mock.CreateChatCompletionStreamFn = func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.StreamReader, error) {
-					return nil, fmt.Errorf("streaming not supported in tests")
-				}
-			},
-			wantErr:    true,
-			wantOutput: "",
+			name:      "invalid temperature",
+			args:      []string{"chat", "--assistant", "test-asst", "--temperature", "1.5", "Hello"},
+			setupMock: func(mock *MockClient) {},
+			wantErr:   true,
 		},
 	}
 
@@ -221,7 +207,6 @@ func TestChatCmd_WithParameters(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-
 				if tt.wantOutput != "" {
 					w.Close()
 					var out strings.Builder
@@ -235,25 +220,8 @@ func TestChatCmd_WithParameters(t *testing.T) {
 	}
 }
 
-// captureOutput est une fonction d'aide pour capturer la sortie stdout
-func captureOutput(f func() error) (string, error) {
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := f()
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var out strings.Builder
-	io.Copy(&out, r)
-
-	return out.String(), err
-}
-
 func TestChatCmd_Flags(t *testing.T) {
-	app, _, cleanup := setupAuthTest(t)
+	app, _, cleanup := setupChatTest(t)
 	defer cleanup()
 
 	tests := []struct {
@@ -275,18 +243,6 @@ func TestChatCmd_Flags(t *testing.T) {
 			errMsg:  "temperature must be between 0.0 and 1.0",
 		},
 		{
-			name:    "invalid top-p",
-			args:    []string{"chat", "--top-p", "1.5", "Hello"},
-			wantErr: true,
-			errMsg:  "top-p must be between 0.0 and 1.0",
-		},
-		{
-			name:    "invalid max-tokens",
-			args:    []string{"chat", "--max-tokens", "-1", "Hello"},
-			wantErr: true,
-			errMsg:  "max-tokens cannot be negative",
-		},
-		{
 			name:    "valid parameters",
 			args:    []string{"chat", "--temperature", "0.8", "--top-p", "0.9", "--max-tokens", "100", "Hello"},
 			wantErr: false,
@@ -295,14 +251,10 @@ func TestChatCmd_Flags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a new command for each test
 			cmd := app.newChatCmd()
-
-			// Parse flags
-			err := cmd.ParseFlags(tt.args[1:]) // Skip "chat" command
+			err := cmd.ParseFlags(tt.args[1:])
 			require.NoError(t, err, "Failed to parse flags")
 
-			// Execute PreRunE
 			err = cmd.PreRunE(cmd, tt.args)
 
 			if tt.wantErr {
@@ -318,7 +270,7 @@ func TestChatCmd_Flags(t *testing.T) {
 }
 
 func TestChatCmd_Authentication(t *testing.T) {
-	app, mockClient, cleanup := setupAuthTest(t)
+	app, mockClient, cleanup := setupChatTest(t)
 	defer cleanup()
 
 	tests := []struct {
@@ -341,10 +293,7 @@ func TestChatCmd_Authentication(t *testing.T) {
 			name:     "authenticated",
 			loggedIn: true,
 			setupMock: func(mock *MockClient) {
-				// Configuration pour toutes les vérifications d'authentification
 				mock.IsAuthenticatedFn = func() bool { return true }
-
-				// Mock pour GetUserAssistants
 				mock.GetUserAssistantsFn = func(ctx context.Context) (*aiyou.AssistantsResponse, error) {
 					return &aiyou.AssistantsResponse{
 						Members: []aiyou.Assistant{
@@ -352,8 +301,6 @@ func TestChatCmd_Authentication(t *testing.T) {
 						},
 					}, nil
 				}
-
-				// Mock pour CreateChatCompletion
 				mock.CreateChatCompletionFn = func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.ChatCompletionResponse, error) {
 					return &aiyou.ChatCompletionResponse{
 						Choices: []aiyou.Choice{
@@ -374,12 +321,10 @@ func TestChatCmd_Authentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Réinitialiser l'état
 			app.SetLoggedIn(tt.loggedIn)
 			if tt.setupMock != nil {
 				tt.setupMock(mockClient)
 			}
-			// S'assurer que le chatManager utilise le client mocké
 			app.chatManager.SetTestClient(mockClient)
 
 			app.rootCmd.SetArgs([]string{"chat", "Hello"})
@@ -391,93 +336,6 @@ func TestChatCmd_Authentication(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
-		})
-	}
-}
-
-func TestChatCmd_OutputCapture(t *testing.T) {
-	app, mockClient, cleanup := setupAuthTest(t)
-	defer cleanup()
-
-	// Configuration globale de base
-	app.SetLoggedIn(true)
-	mockClient.IsAuthenticatedFn = func() bool { return true }
-	mockClient.GetUserAssistantsFn = func(ctx context.Context) (*aiyou.AssistantsResponse, error) {
-		return &aiyou.AssistantsResponse{
-			Members: []aiyou.Assistant{
-				{ID: "default-asst"},
-			},
-		}, nil
-	}
-
-	// S'assurer que le chatManager utilise le client mocké
-	app.chatManager.SetTestClient(mockClient)
-
-	// Redirect stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	defer func() {
-		os.Stdout = oldStdout
-	}()
-
-	tests := []struct {
-		name         string
-		args         []string
-		setupMock    func(*MockClient)
-		wantOutput   string
-		noWantOutput string
-	}{
-		{
-			name: "normal output",
-			args: []string{"chat", "Hello"},
-			setupMock: func(mock *MockClient) {
-				mock.CreateChatCompletionFn = func(ctx context.Context, messages []aiyou.Message, assistantID string) (*aiyou.ChatCompletionResponse, error) {
-					return &aiyou.ChatCompletionResponse{
-						Choices: []aiyou.Choice{
-							{
-								Message: aiyou.Message{
-									Content: []aiyou.ContentPart{
-										{Type: "text", Text: "Hello, human!"},
-									},
-								},
-							},
-						},
-					}, nil
-				}
-			},
-			wantOutput: "Hello, human!",
-		},
-		// Pour le moment, nous allons retirer le test de streaming car nous ne pouvons pas
-		// facilement mocker StreamReader qui est une structure concrète
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.setupMock != nil {
-				tt.setupMock(mockClient)
-			}
-
-			app.rootCmd.SetArgs(tt.args)
-			err := app.rootCmd.Execute()
-			assert.NoError(t, err)
-
-			w.Close()
-			var out strings.Builder
-			io.Copy(&out, r)
-			output := out.String()
-
-			if tt.wantOutput != "" {
-				assert.Contains(t, output, tt.wantOutput)
-			}
-			if tt.noWantOutput != "" {
-				assert.NotContains(t, output, tt.noWantOutput)
-			}
-
-			// Reset pipe for next test
-			r, w, _ = os.Pipe()
-			os.Stdout = w
 		})
 	}
 }

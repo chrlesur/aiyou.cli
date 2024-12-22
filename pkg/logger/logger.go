@@ -206,10 +206,16 @@ func (l *Logger) Close() {
 
 // ResetForTest resets the logger state for testing purposes
 func ResetForTest() {
-	once = sync.Once{}
-	if instance != nil && instance.file != nil {
-		instance.file.Close()
+	if instance != nil {
+		if instance.file != nil {
+			instance.file.Sync()
+			instance.file.Close()
+			instance.file = nil
+		}
+		instance.writer = os.Stdout
+		instance.logger = log.New(os.Stdout, "", log.LstdFlags)
 	}
+	once = sync.Once{}
 	instance = nil
 }
 

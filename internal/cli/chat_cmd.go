@@ -15,6 +15,8 @@ import (
 
 // newChatCmd creates and returns the chat command
 func (a *App) newChatCmd() *cobra.Command {
+	a.logger.Debug("Creating chat command")
+
 	chatCmd := &cobra.Command{
 		Use:   "chat [message]",
 		Short: "Chat with an AI assistant",
@@ -25,38 +27,16 @@ func (a *App) newChatCmd() *cobra.Command {
 - Configure advanced response parameters
 
 Advanced Parameters:
-  - temperature: Controls randomness in responses (0.0-1.0)
-    Lower values make responses more focused and deterministic
-    Higher values make responses more creative and diverse
+ - temperature: Controls randomness in responses (0.0-1.0)
+ Lower values make responses more focused and deterministic
+ Higher values make responses more creative and diverse
 
-  - top-p: Controls response diversity via nucleus sampling (0.0-1.0)
-    Lower values make responses more focused on likely tokens
-    Higher values allow for more diverse token selection
+ - top-p: Controls response diversity via nucleus sampling (0.0-1.0)
+ Lower values make responses more focused on likely tokens
+ Higher values allow for more diverse token selection
 
-  - max-tokens: Limits the length of the response
-    0 means no limit, positive values set a specific limit
-
-Examples:
-  # Send a simple message
-  aiyou chat "What is the capital of France?"
-
-  # Start an interactive session
-  aiyou chat -i
-
-  # Enable streaming for real-time responses
-  aiyou chat -s "Tell me a story"
-
-  # Use advanced parameters for creative writing
-  aiyou chat --temperature 0.8 --top-p 0.9 "Write a creative story"
-
-  # Limit response length
-  aiyou chat --max-tokens 100 "Summarize this concept"
-
-  # Combine multiple parameters
-  aiyou chat -s --temperature 0.8 --max-tokens 200 "Generate a poem"
-
-  # Use with specific assistant
-  aiyou chat -a asst_123 "Hello"`,
+ - max-tokens: Limits the length of the response
+ 0 means no limit, positive values set a specific limit`,
 		RunE: a.runChat,
 	}
 
@@ -72,33 +52,40 @@ Examples:
 
 	// Add flag validations
 	chatCmd.PreRunE = func(cmd *cobra.Command, args []string) error {
-		// Validate flags first
+		a.logger.Debug("Validating chat command flags")
+
 		temp, _ := cmd.Flags().GetFloat32("temperature")
 		if temp < 0.0 || temp > 1.0 {
+			a.logger.Error("Invalid temperature value: %.2f", temp)
 			return fmt.Errorf("temperature must be between 0.0 and 1.0")
 		}
 
 		topP, _ := cmd.Flags().GetFloat32("top-p")
 		if topP < 0.0 || topP > 1.0 {
+			a.logger.Error("Invalid top-p value: %.2f", topP)
 			return fmt.Errorf("top-p must be between 0.0 and 1.0")
 		}
 
 		maxTokens, _ := cmd.Flags().GetInt("max-tokens")
 		if maxTokens < 0 {
+			a.logger.Error("Invalid max-tokens value: %d", maxTokens)
 			return fmt.Errorf("max-tokens cannot be negative")
 		}
 
+		a.logger.Debug("Chat command flags validated successfully")
 		return nil
 	}
 
+	a.logger.Debug("Chat command created successfully")
 	return chatCmd
 }
 
 // runChat handles the chat command execution
 func (a *App) runChat(cmd *cobra.Command, args []string) error {
+	a.logger.Debug("Starting chat execution")
 
-	// Check authentication first
 	if !a.IsLoggedIn() {
+		a.logger.Error("Chat attempted without authentication")
 		return fmt.Errorf("authentication required: please login first using 'aiyou login'")
 	}
 
@@ -112,7 +99,9 @@ func (a *App) runChat(cmd *cobra.Command, args []string) error {
 	topP, _ := cmd.Flags().GetFloat32("top-p")
 	maxTokens, _ := cmd.Flags().GetInt("max-tokens")
 
-	// Create and validate parameters
+	a.logger.Debug("Chat parameters - Assistant: %s, Interactive: %v, Stream: %v, Temperature: %.2f, TopP: %.2f, MaxTokens: %d",
+		assistantID, interactive, stream, temperature, topP, maxTokens)
+
 	params := api.ChatParameters{
 		Temperature: temperature,
 		TopP:        topP,
@@ -120,79 +109,91 @@ func (a *App) runChat(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := params.Validate(); err != nil {
+		a.logger.Error("Invalid chat parameters: %v", err)
 		return err
 	}
 
 	// Validate assistant ID
 	if assistantID == "" {
+		a.logger.Debug("No assistant specified, getting default assistant")
 		defaultAssistant, err := a.getDefaultAssistant(ctx)
 		if err != nil {
+			a.logger.Error("Failed to get default assistant: %v", err)
 			return fmt.Errorf("no assistant specified and couldn't get default: %w", err)
 		}
 		assistantID = defaultAssistant
-		a.log.Debugf("Using default assistant: %s", assistantID)
+		a.logger.Debug("Using default assistant: %s", assistantID)
 	}
 
-	// Handle interactive mode
 	if interactive {
+		a.logger.Info("Starting interactive chat session")
 		return a.runInteractiveChat(ctx, assistantID, stream, params)
 	}
 
-	// Handle single message mode
 	if len(args) == 0 {
+		a.logger.Error("No message provided in non-interactive mode")
 		return fmt.Errorf("message is required when not in interactive mode")
 	}
 
 	message := strings.Join(args, " ")
+	a.logger.Debug("Sending single message in non-interactive mode")
 	return a.sendSingleMessage(ctx, message, assistantID, stream, params)
 }
 
 // sendSingleMessage handles sending a single message and receiving the response
 func (a *App) sendSingleMessage(ctx context.Context, message, assistantID string, stream bool, params api.ChatParameters) error {
+	a.logger.Debug("Processing single message - Stream: %v, Assistant: %s", stream, assistantID)
+
 	if stream {
 		return a.handleStreamingResponse(ctx, message, assistantID)
 	}
 
 	response, err := a.chatManager.SendMessageWithParams(ctx, message, assistantID, params)
 	if err != nil {
+		a.logger.Error("Failed to send message: %v", err)
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 
 	if len(response.Choices) == 0 {
+		a.logger.Error("Received empty response from assistant")
 		return fmt.Errorf("received empty response from assistant")
 	}
 
+	a.logger.Debug("Message sent successfully, displaying response")
 	fmt.Printf("\n%s\n", response.Choices[0].Message.Content[0].Text)
 	return nil
 }
 
 // handleStreamingResponse manages streaming responses from the assistant
 func (a *App) handleStreamingResponse(ctx context.Context, message, assistantID string) error {
+	a.logger.Debug("Starting streaming response for assistant: %s", assistantID)
+
 	stream, err := a.chatManager.SendMessageStream(ctx, message, assistantID)
 	if err != nil {
+		a.logger.Error("Failed to start message stream: %v", err)
 		return fmt.Errorf("failed to start message stream: %w", err)
 	}
 	defer stream.Close()
 
-	// Channel for handling streaming errors
 	errChan := make(chan error, 1)
-	// Channel for handling cancellation
 	done := make(chan struct{})
 
-	// Goroutine for reading the stream
 	go func() {
 		defer close(done)
 		for {
 			select {
 			case <-ctx.Done():
+				a.logger.Debug("Stream context cancelled")
 				errChan <- ctx.Err()
 				return
 			default:
 				chunk, err := stream.ReadChunk()
 				if err != nil {
 					if err == io.EOF {
+						a.logger.Debug("Stream completed normally")
 						return
 					}
+					a.logger.Error("Error reading stream chunk: %v", err)
 					errChan <- err
 					return
 				}
@@ -206,34 +207,32 @@ func (a *App) handleStreamingResponse(ctx context.Context, message, assistantID 
 		}
 	}()
 
-	// Wait for streaming completion or error
 	select {
 	case err := <-errChan:
+		a.logger.Error("Stream error: %v", err)
 		return err
 	case <-done:
-		fmt.Println() // New line after complete response
+		a.logger.Debug("Stream completed successfully")
+		fmt.Println()
 		return nil
 	}
 }
 
 // runInteractiveChat manages an interactive chat session
 func (a *App) runInteractiveChat(ctx context.Context, assistantID string, stream bool, params api.ChatParameters) error {
-	a.log.Info("Starting interactive chat session. Type 'exit' or press Ctrl+C to end.")
-	a.log.Debugf("Using assistant: %s", assistantID)
-	if stream {
-		a.log.Info("Streaming mode enabled")
-	}
-	a.log.Debugf("Parameters: temperature=%.2f, top_p=%.2f, max_tokens=%d",
-		params.Temperature, params.TopP, params.MaxTokens)
+	a.logger.Info("Starting interactive chat session")
+	a.logger.Debug("Interactive chat parameters - Assistant: %s, Stream: %v, Temperature: %.2f, TopP: %.2f, MaxTokens: %d",
+		assistantID, stream, params.Temperature, params.TopP, params.MaxTokens)
 
-	// Start chat session
 	err := a.chatManager.StartConversation(ctx, assistantID)
 	if err != nil {
+		a.logger.Error("Failed to start chat session: %v", err)
 		return fmt.Errorf("failed to start chat session: %w", err)
 	}
+
 	defer func() {
 		if err := a.chatManager.EndConversation(ctx); err != nil {
-			a.log.Errorf("Failed to properly end chat session: %v", err)
+			a.logger.Error("Failed to properly end chat session: %v", err)
 		}
 	}()
 
@@ -246,6 +245,7 @@ func (a *App) runInteractiveChat(ctx context.Context, assistantID string, stream
 
 		input := strings.TrimSpace(scanner.Text())
 		if input == "exit" {
+			a.logger.Debug("User requested to exit interactive session")
 			break
 		}
 
@@ -253,6 +253,7 @@ func (a *App) runInteractiveChat(ctx context.Context, assistantID string, stream
 			continue
 		}
 
+		a.logger.Debug("Processing interactive input")
 		if stream {
 			err = a.handleStreamingResponse(ctx, input, assistantID)
 		} else {
@@ -260,9 +261,12 @@ func (a *App) runInteractiveChat(ctx context.Context, assistantID string, stream
 		}
 
 		if err != nil {
-			a.log.Errorf("Error: %v", err)
-			// Don't exit on error, allow retry
+			a.logger.Error("Error processing message: %v", err)
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		a.logger.Error("Scanner error: %v", err)
 	}
 
 	return scanner.Err()
@@ -270,28 +274,30 @@ func (a *App) runInteractiveChat(ctx context.Context, assistantID string, stream
 
 // getDefaultAssistant attempts to get a default assistant ID
 func (a *App) getDefaultAssistant(ctx context.Context) (string, error) {
-	// First check cache
+	a.logger.Debug("Attempting to get default assistant")
+
 	if entry, exists := a.cache.Get(ctx, "default_assistant"); exists {
 		if id, ok := entry.Value.(string); ok {
+			a.logger.Debug("Found default assistant in cache: %s", id)
 			return id, nil
 		}
+		a.logger.Warning("Cache entry exists but type assertion failed")
 	}
 
-	// If not in cache, get list of assistants
 	assistants, err := a.chatManager.GetAssistants(ctx)
 	if err != nil {
+		a.logger.Error("Failed to get assistants: %v", err)
 		return "", fmt.Errorf("failed to get assistants: %w", err)
 	}
 
 	if len(assistants.Members) == 0 {
+		a.logger.Error("No assistants available")
 		return "", fmt.Errorf("no assistants available")
 	}
 
-	// Use first assistant as default
 	defaultID := assistants.Members[0].ID
-
-	// Cache the result
 	a.cache.Set(ctx, "default_assistant", defaultID, "assistant")
+	a.logger.Debug("Set new default assistant: %s", defaultID)
 
 	return defaultID, nil
 }
