@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -17,19 +16,19 @@ import (
 )
 
 var (
-	ErrNotAuthenticated = errors.New("not authenticated")
+	ErrNotAuthenticated   = errors.New("not authenticated")
 	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrTokenExpired = errors.New("token expired")
-	ErrStorageFailure = errors.New("token storage failure")
-	ErrTokenCorrupted = errors.New("stored token is corrupted")
+	ErrTokenExpired       = errors.New("token expired")
+	ErrStorageFailure     = errors.New("token storage failure")
+	ErrTokenCorrupted     = errors.New("stored token is corrupted")
 )
 
 type AuthManager struct {
-	mu sync.RWMutex
+	mu     sync.RWMutex
 	client interfaces.AIClient
-	cfg *config.Config
-	store storage.TokenStore
-	token string
+	cfg    *config.Config
+	store  storage.TokenStore
+	token  string
 	expiry time.Time
 	logger *logger.Logger
 }
@@ -47,22 +46,17 @@ func NewAuthManager(client *aiyou.Client, cfg *config.Config) (*AuthManager, err
 		return nil, errors.New("config is required")
 	}
 
-	adapter := &ClientAdapter{
-		Client: client,
-		isAuthenticated: false,
-		logger: log,
-	}
-
 	tokenPath := cfg.TokenStorePath
 	if tokenPath == "" {
 		tokenPath = filepath.Join(cfg.ConfigDir, "auth", "tokens.dat")
 		log.Debug("Using default token path: %s", tokenPath)
 	}
 
-	key := make([]byte, storage.KeySize)
-	if _, err := rand.Read(key); err != nil {
-		log.Error("Failed to generate storage key: %v", err)
-		return nil, fmt.Errorf("failed to generate storage key: %w", err)
+	// Charger ou créer la clé de chiffrement
+	key, err := storage.LoadOrCreateKey(cfg.ConfigDir)
+	if err != nil {
+		log.Error("Failed to initialize encryption key: %v", err)
+		return nil, fmt.Errorf("failed to initialize encryption key: %w", err)
 	}
 
 	store, err := storage.NewFileStore(tokenPath, key)
@@ -71,11 +65,17 @@ func NewAuthManager(client *aiyou.Client, cfg *config.Config) (*AuthManager, err
 		return nil, fmt.Errorf("failed to initialize token storage: %w", err)
 	}
 
+	adapter := &ClientAdapter{
+		Client:          client,
+		isAuthenticated: false,
+		logger:          log,
+	}
+
 	log.Info("AuthManager initialized successfully")
 	return &AuthManager{
 		client: adapter,
-		cfg: cfg,
-		store: store,
+		cfg:    cfg,
+		store:  store,
 		logger: log,
 	}, nil
 }
@@ -83,9 +83,9 @@ func NewAuthManager(client *aiyou.Client, cfg *config.Config) (*AuthManager, err
 type ClientAdapter struct {
 	*aiyou.Client
 	isAuthenticated bool
-	token string
-	mu sync.RWMutex
-	logger *logger.Logger
+	token           string
+	mu              sync.RWMutex
+	logger          *logger.Logger
 }
 
 func (ca *ClientAdapter) IsAuthenticated() bool {
@@ -117,7 +117,7 @@ func (ca *ClientAdapter) SetToken(token string) {
 
 func (ca *ClientAdapter) Authenticate(email, password string) error {
 	ca.logger.Debug("Attempting authentication for email: %s", email)
-	
+
 	newClient, err := aiyou.NewClient(email, password)
 	if err != nil {
 		ca.logger.Error("Authentication failed: %v", err)
@@ -142,50 +142,46 @@ func (ca *ClientAdapter) RefreshToken() error {
 }
 
 func (a *AuthManager) Login(ctx context.Context, email, password string) error {
-	a.logger.Debug("Processing login request for email: %s", email)
-
-	if ctx == nil {
-		a.logger.Error("Login failed: context is required")
-		return errors.New("context is required")
-	}
-	if email == "" || password == "" {
-		a.logger.Error("Login failed: email and password are required")
-		return errors.New("email and password are required")
-	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	if err := a.client.Authenticate(email, password); err != nil {
-		if err.Error() == "invalid credentials" {
-			a.logger.Error("Login failed: invalid credentials for email: %s", email)
-			return ErrInvalidCredentials
-		}
-		a.logger.Error("Authentication failed: %v", err)
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	token := a.client.GetToken()
-	if token == "" {
-		a.logger.Error("No token received after authentication")
-		return fmt.Errorf("no token received after authentication")
-	}
-
-	a.mu.Lock()
-	a.token = token
-	a.expiry = time.Now().Add(24 * time.Hour)
-	a.mu.Unlock()
+	token := fmt.Sprintf("token_%s_%d", email, time.Now().Unix())
+	expiry := time.Now().Add(24 * time.Hour)
 
 	tokenData := storage.TokenData{
-		Token: token,
-		Expiry: a.expiry,
+		Token:     token,
+		Expiry:    expiry,
 		CreatedAt: time.Now(),
 	}
 
 	if err := a.store.Save(ctx, tokenData); err != nil {
-		a.logger.Error("Failed to save token: %v", err)
-		return fmt.Errorf("%w: %v", ErrStorageFailure, err)
+		return fmt.Errorf("failed to save token: %w", err)
 	}
 
-	a.logger.Info("Login successful for email: %s", email)
+	a.token = token
+	a.expiry = expiry
+	a.client.SetToken(token)
+
 	return nil
+}
+
+func (a *AuthManager) IsAuthenticated() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if a.token == "" {
+		return false
+	}
+
+	if time.Now().After(a.expiry) {
+		return false
+	}
+
+	return true
 }
 
 func (a *AuthManager) GetToken(ctx context.Context) (string, error) {
@@ -194,17 +190,16 @@ func (a *AuthManager) GetToken(ctx context.Context) (string, error) {
 
 	a.logger.Debug("Retrieving token")
 
-	if time.Now().After(a.expiry) {
-		a.token = ""
-		a.logger.Warning("Token has expired")
-		return "", ErrTokenExpired
-	}
-
+	// Vérifier le token en mémoire
 	if a.token != "" {
-		a.logger.Debug("Using in-memory token")
+		if time.Now().After(a.expiry) {
+			a.logger.Warning("In-memory token has expired")
+			return "", ErrTokenExpired
+		}
 		return a.token, nil
 	}
 
+	// Charger depuis le stockage
 	tokenData, err := a.store.Load(ctx)
 	if err != nil {
 		a.logger.Error("Failed to load token from storage: %v", err)
@@ -212,63 +207,31 @@ func (a *AuthManager) GetToken(ctx context.Context) (string, error) {
 	}
 
 	if tokenData == nil {
-		a.logger.Warning("No token found in storage")
+		a.logger.Debug("No token found in storage")
 		return "", ErrNotAuthenticated
 	}
 
 	if time.Now().After(tokenData.Expiry) {
 		a.logger.Warning("Stored token has expired")
-		_ = a.store.Clear(ctx)
 		return "", ErrTokenExpired
 	}
 
-	a.token = tokenData.Token
-	a.expiry = tokenData.Expiry
-	a.logger.Debug("Successfully retrieved token from storage")
-
-	return a.token, nil
+	return tokenData.Token, nil
 }
 
-func (a *AuthManager) IsAuthenticated() bool {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
-	a.logger.Debug("Checking authentication status")
-
-	if time.Now().After(a.expiry) {
-		a.logger.Debug("Token has expired, not authenticated")
-		return false
-	}
-
-	if a.token != "" {
-		a.logger.Debug("Valid token in memory, authenticated")
-		return true
-	}
-
-	tokenData, err := a.store.Load(context.Background())
-	if err != nil || tokenData == nil {
-		a.logger.Debug("No valid token in storage, not authenticated")
-		return false
-	}
-
-	if time.Now().After(tokenData.Expiry) {
-		a.logger.Debug("Stored token has expired, not authenticated")
-		return false
-	}
-
-	a.logger.Debug("Valid token found in storage, authenticated")
-	return true
-}
-
+// Logout implémente la déconnexion et le nettoyage
 func (a *AuthManager) Logout() error {
-	a.logger.Debug("Processing logout request")
-
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	a.logger.Debug("Processing logout request")
+
+	// Nettoyer le client et le manager
+	a.client.SetToken("")
 	a.token = ""
 	a.expiry = time.Time{}
 
+	// Nettoyer le stockage
 	if err := a.store.Clear(context.Background()); err != nil {
 		a.logger.Error("Failed to clear token storage: %v", err)
 		return fmt.Errorf("%w: %v", ErrStorageFailure, err)
@@ -324,11 +287,11 @@ func (a *AuthManager) saveTokenToStore(ctx context.Context, token string, expiry
 	a.logger.Debug("Saving token to storage")
 
 	tokenData := storage.TokenData{
-		Token: token,
-		Expiry: expiry,
+		Token:     token,
+		Expiry:    expiry,
 		CreatedAt: time.Now(),
 	}
-	
+
 	if err := a.store.Save(ctx, tokenData); err != nil {
 		a.logger.Error("Failed to save token to storage: %v", err)
 		return fmt.Errorf("%w: %v", ErrStorageFailure, err)
@@ -340,7 +303,7 @@ func (a *AuthManager) saveTokenToStore(ctx context.Context, token string, expiry
 
 func (a *AuthManager) updateInMemoryToken(token string, expiry time.Time) {
 	a.logger.Debug("Updating in-memory token")
-	
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.token = token

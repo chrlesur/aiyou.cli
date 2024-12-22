@@ -3,13 +3,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/chrlesur/aiyou.cli/internal/cli"
 	"github.com/chrlesur/aiyou.cli/internal/config"
-	"github.com/sirupsen/logrus"
+	"github.com/chrlesur/aiyou.cli/pkg/logger"
+	"github.com/joho/godotenv"
 )
 
 // main initializes and starts the AI.YOU CLI application.
@@ -19,19 +21,70 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Check command line arguments for verbose/debug flags
+	isVerbose := false
+	isDebug := false
+	for _, arg := range os.Args {
+		switch arg {
+		case "--verbose":
+			isVerbose = true
+		case "--debug":
+			isDebug = true
+		}
+	}
+
+	// Initialize logger with appropriate mode
+	log := logger.GetLogger()
+	var logLevel logger.LogLevel
+	var silent bool
+
+	switch {
+	case isDebug:
+		logLevel = logger.DebugLevel
+		silent = false
+	case isVerbose:
+		logLevel = logger.InfoLevel
+		silent = false
+	default:
+		logLevel = logger.InfoLevel
+		silent = true
+	}
+
+	err := log.Configure(logger.Config{
+		LogDir: "logs",
+		Level:  logLevel,
+		Silent: silent,
+	})
+	if err != nil {
+		// Fallback to direct stdout since logger isn't configured yet
+		fmt.Printf("Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Load .env file if present
+	if err := godotenv.Load(); err != nil {
+		log.Debug("No .env file found or error loading it: %v", err)
+	} else {
+		log.Debug("Successfully loaded .env file")
+	}
+
 	// Initialize configuration
 	cfg, err := config.Load()
 	if err != nil {
-		logrus.Fatalf("Failed to load configuration: %v", err)
+		log.Error("Failed to load configuration: %v", err)
+		os.Exit(1)
 	}
 
-	// Initialize logger
-	logger := logrus.New()
-	logger.SetLevel(logrus.InfoLevel)
-	if cfg.Debug {
-		logger.SetLevel(logrus.DebugLevel)
+	// Update config based on command line flags
+	if isDebug {
+		cfg.Debug = true
+		log.Debug("Debug mode enabled")
 	}
-	logger.Info("Starting AI.YOU CLI")
+	if isVerbose {
+		log.Info("Verbose mode enabled")
+	}
+
+	log.Info("Starting AI.YOU CLI")
 
 	// Setup signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -41,10 +94,10 @@ func main() {
 	app, err := cli.NewApp(&cli.AppConfig{
 		Version: "1.0.0", // Version can be set from build flags
 		Config:  cfg,
-		Logger:  logger,
 	})
 	if err != nil {
-		logger.Fatalf("Failed to initialize CLI application: %v", err)
+		log.Error("Failed to initialize CLI application: %v", err)
+		os.Exit(1)
 	}
 
 	// Create a channel to receive run completion
@@ -59,13 +112,15 @@ func main() {
 	select {
 	case err := <-done:
 		if err != nil {
-			logger.Errorf("Application error: %v", err)
+			log.Error("Application error: %v", err)
 			os.Exit(1)
 		}
 	case <-sigChan:
-		logger.Info("Shutting down gracefully...")
+		log.Info("Shutting down gracefully...")
 		cancel()
 		// Wait for the application to finish
 		<-done
 	}
+
+	log.Info("Application shutdown complete")
 }

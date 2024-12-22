@@ -146,7 +146,13 @@ func (l *Logger) formatMessage(level string, message string, args ...interface{}
 	formattedMsg := fmt.Sprintf(message, args...)
 
 	if l.level <= DebugLevel {
-		_, file, line, _ := runtime.Caller(2)
+		// Changer le niveau de caller de 2 à 3 pour obtenir l'appelant réel
+		_, file, line, ok := runtime.Caller(3)
+		if !ok {
+			file = "unknown"
+			line = 0
+		}
+		// Utiliser filepath.Base pour n'avoir que le nom du fichier
 		return fmt.Sprintf("[%s] %s:%d - [%s] %s",
 			timestamp,
 			filepath.Base(file),

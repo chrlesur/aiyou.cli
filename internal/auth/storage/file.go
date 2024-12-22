@@ -3,6 +3,7 @@ package storage
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -112,4 +113,39 @@ func (f *FileStore) Clear(ctx context.Context) error {
 		return fmt.Errorf("failed to remove token file: %w", err)
 	}
 	return nil
+}
+
+// GetKeyPath retourne le chemin du fichier de clé
+func GetKeyPath(configDir string) string {
+	return filepath.Join(configDir, "auth", "key.dat")
+}
+
+// LoadOrCreateKey charge la clé existante ou en crée une nouvelle
+func LoadOrCreateKey(configDir string) ([]byte, error) {
+	keyPath := GetKeyPath(configDir)
+
+	// Essayer de charger la clé existante
+	key, err := os.ReadFile(keyPath)
+	if err == nil && len(key) == KeySize {
+		return key, nil
+	}
+
+	// Créer une nouvelle clé
+	key = make([]byte, KeySize)
+	if _, err := rand.Read(key); err != nil {
+		return nil, fmt.Errorf("failed to generate key: %w", err)
+	}
+
+	// Assurer que le répertoire existe
+	keyDir := filepath.Dir(keyPath)
+	if err := os.MkdirAll(keyDir, DirPerms); err != nil {
+		return nil, fmt.Errorf("failed to create key directory: %w", err)
+	}
+
+	// Sauvegarder la clé
+	if err := os.WriteFile(keyPath, key, FilePerms); err != nil {
+		return nil, fmt.Errorf("failed to save key: %w", err)
+	}
+
+	return key, nil
 }

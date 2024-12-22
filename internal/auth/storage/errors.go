@@ -11,6 +11,7 @@ var (
 	ErrCorruptedData    = errors.New("corrupted or tampered data")
 	ErrInvalidFormat    = errors.New("invalid file format")
 	ErrPermissionDenied = errors.New("permission denied accessing storage")
+	ErrKeyFileNotFound  = errors.New("encryption key file not found")
 )
 
 const (
