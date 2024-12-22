@@ -2,22 +2,23 @@ package api
 
 import (
 	"context"
-	"io"
 	"testing"
 	"time"
 
 	"github.com/chrlesur/aiyou.cli/internal/cache"
 	"github.com/chrlesur/aiyou.cli/internal/cache/memory"
 	"github.com/chrlesur/aiyou.cli/internal/config"
+	"github.com/chrlesur/aiyou.cli/pkg/logger"
 	"github.com/chrlesur/aiyou.golib/pkg/aiyou"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func setupChatTest(t *testing.T) (*ChatManager, *MockClient, cache.Cache, func()) {
-	logger := logrus.New()
-	logger.SetOutput(io.Discard)
+	// Configure le logger pour les tests
+	log := logger.GetLogger()
+	log.SetSilentMode(true)
+	log.SetLevel(logger.ErrorLevel) // Ne logger que les erreurs pendant les tests
 
 	mockClient := &MockClient{}
 
@@ -35,12 +36,14 @@ func setupChatTest(t *testing.T) (*ChatManager, *MockClient, cache.Cache, func()
 		Client: mockClient,
 		Cache:  memCache,
 		Config: cfg,
-		Logger: logger,
 	})
 	require.NoError(t, err)
 
 	cleanup := func() {
 		memCache.Close()
+		// Réinitialiser le logger après les tests
+		log.SetSilentMode(false)
+		log.SetLevel(logger.InfoLevel)
 	}
 
 	return cm, mockClient, memCache, cleanup
@@ -276,7 +279,7 @@ func TestChatManager_SendMessageWithParams(t *testing.T) {
 			message:     "Hello",
 			assistantID: "test-assistant",
 			params: ChatParameters{
-				Temperature: 1.5, // Invalid temperature
+				Temperature: 1.5,
 				TopP:        0.9,
 				MaxTokens:   100,
 			},

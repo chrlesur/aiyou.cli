@@ -16,7 +16,7 @@ type Client struct {
     initialDelay time.Duration
     logger       Logger
     safeLog      func(level LogLevel, format string, args ...interface{})
-    rateLimiter  *RateLimiter
+    rateLimiter  *RateLimitera
 }
 
 func NewClient(email, password string, options ...ClientOption) (*Client, error)
